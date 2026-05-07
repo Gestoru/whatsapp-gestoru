@@ -18,9 +18,9 @@ class Base44Service
         $this->client = new Client([
             'base_uri' => rtrim(config('services.base44.api_url'), '/') . '/',
             'headers'  => [
-                'api_key'      => config('services.base44.api_key'),
-                'Content-Type' => 'application/json',
-                'Accept'       => 'application/json',
+                'Authorization' => 'Bearer ' . config('services.base44.api_key'),
+                'Content-Type'  => 'application/json',
+                'Accept'        => 'application/json',
             ],
             'timeout' => 30,
         ]);
