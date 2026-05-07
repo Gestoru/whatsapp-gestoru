@@ -20,6 +20,7 @@ Route::middleware(ApiTokenMiddleware::class)->group(function () {
     Route::put('/agent/config', [AgentConfigController::class, 'update']);
 
     // Conexión WhatsApp
+    Route::get('/whatsapp/status', [AgentConfigController::class, 'status']);
     Route::post('/whatsapp/connect/request-qr', [AgentConfigController::class, 'requestQr']);
     Route::post('/whatsapp/connect/disconnect',  [AgentConfigController::class, 'disconnect']);
 

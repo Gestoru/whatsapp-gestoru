@@ -79,6 +79,19 @@ class AgentConfigController extends Controller
         }
     }
 
+    public function status(): JsonResponse
+    {
+        try {
+            $config = $this->base44->getAgentConfig();
+            return response()->json([
+                'connection_status' => $config['connection_status'] ?? 'disconnected',
+                'qr_code_data_url'  => $config['qr_code_data_url'] ?? null,
+            ]);
+        } catch (RequestException $e) {
+            return $this->base44Error($e);
+        }
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private function base44Error(RequestException $e): JsonResponse
