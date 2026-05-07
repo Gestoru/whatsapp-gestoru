@@ -30,12 +30,17 @@ class Base44Service
 
     public function listEntities(string $entity, array $filters = [], array $sort = [], int $limit = 100): array
     {
-        $payload = ['filters' => $filters, 'limit' => $limit];
+        $query = ['limit' => $limit];
+        
+        if (!empty($filters)) {
+            $query['filters'] = json_encode($filters);
+        }
+        
         if (!empty($sort)) {
-            $payload['sort'] = $sort;
+            $query['sort'] = json_encode($sort);
         }
 
-        return $this->request('POST', "apps/{$this->appId}/entities/{$entity}/list", $payload);
+        return $this->request('GET', "apps/{$this->appId}/entities/{$entity}", $query);
     }
 
     public function getEntity(string $entity, string $id): array
@@ -116,12 +121,15 @@ class Base44Service
 
     // ── Private ───────────────────────────────────────────────────────────────
 
-    private function request(string $method, string $uri, array $json = []): array
+    private function request(string $method, string $uri, array $data = []): array
     {
         try {
             $options = [];
-            if (!empty($json) && in_array($method, ['POST', 'PATCH', 'PUT'])) {
-                $options['json'] = $json;
+            
+            if ($method === 'GET') {
+                $options['query'] = $data;
+            } elseif (!empty($data)) {
+                $options['json'] = $data;
             }
 
             $response = $this->client->request($method, $uri, $options);
