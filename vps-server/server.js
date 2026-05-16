@@ -43,6 +43,7 @@ function buildClient() {
         authStrategy: new LocalAuth({ clientId: 'wpp-gestoru' }),
         puppeteer: {
             headless: true,
+            executablePath: '/bin/chromium-browser',
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
