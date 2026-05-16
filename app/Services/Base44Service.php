@@ -41,28 +41,28 @@ class Base44Service
             $query['sort'] = json_encode($sort);
         }
 
-        return $this->request('GET', "entities/{$entity}", $query);
+        return $this->request('GET', "apps/{$this->appId}/entities/{$entity}", $query);
     }
 
     public function getEntity(string $entity, string $id): array
     {
-        return $this->request('GET', "entities/{$entity}/{$id}");
+        return $this->request('GET', "apps/{$this->appId}/entities/{$entity}/{$id}");
     }
 
     public function createEntity(string $entity, array $data): array
     {
-        return $this->request('POST', "entities/{$entity}", $data);
+        return $this->request('POST', "apps/{$this->appId}/entities/{$entity}", $data);
     }
 
     public function updateEntity(string $entity, string $id, array $data): array
     {
-        return $this->request('PATCH', "entities/{$entity}/{$id}", $data);
+        return $this->request('PATCH', "apps/{$this->appId}/entities/{$entity}/{$id}", $data);
     }
 
     public function uploadFile(string $filePath, string $mimeType, string $fileName): ?string
     {
         try {
-            $response = $this->client->request('POST', "files/upload", [
+            $response = $this->client->request('POST', "apps/{$this->appId}/files/upload", [
                 'multipart' => [
                     [
                         'name'     => 'file',
@@ -86,7 +86,7 @@ class Base44Service
     public function getAgentConfig(): ?array
     {
         try {
-            return $this->request('POST', "functions/getAgentConfig");
+            return $this->request('POST', "apps/{$this->appId}/functions/getAgentConfig");
         } catch (\Exception $e) {
             return null;
         }
@@ -94,7 +94,7 @@ class Base44Service
 
     public function upsertAgentConfig(array $data): array
     {
-        return $this->request('POST', "functions/updateAgentConfig", $data);
+        return $this->request('POST', "apps/{$this->appId}/functions/updateAgentConfig", $data);
     }
 
     // ── Conversation helpers ──────────────────────────────────────────────────
