@@ -42,9 +42,11 @@ return [
     ],
 
     'base44' => [
-        'api_url' => env('BASE44_API_URL', 'https://api.base44.com'),
-        'app_id'  => env('BASE44_APP_ID'),
-        'api_key' => env('BASE44_API_KEY'),
+        'api_url'        => env('BASE44_API_URL', 'https://api.base44.com'),
+        'app_id'         => env('BASE44_APP_ID'),
+        'api_key'        => env('BASE44_API_KEY'),
+        'webhook_url'    => env('BASE44_WEBHOOK_URL'),
+        'webhook_secret' => env('BASE44_WEBHOOK_SECRET'),
     ],
 
     'laravel_api_token' => env('LARAVEL_API_TOKEN'),

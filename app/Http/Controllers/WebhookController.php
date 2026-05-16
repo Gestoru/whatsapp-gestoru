@@ -11,7 +11,10 @@ use Illuminate\Support\Facades\Storage;
 
 class WebhookController extends Controller
 {
-    public function __construct(private Base44Service $base44) {}
+    public function __construct(
+        private Base44Service $base44,
+        private \App\Services\Base44WebhookService $base44Webhook,
+    ) {}
 
     public function handle(Request $request): JsonResponse
     {
@@ -33,9 +36,15 @@ class WebhookController extends Controller
 
     private function handleQrUpdate(array $payload): JsonResponse
     {
+        $qrDataUrl = $payload['qr_data_url'] ?? null;
+
         $this->base44->upsertAgentConfig([
             'connection_status' => 'scanning',
-            'qr_code_data_url'  => $payload['qr_data_url'] ?? null,
+            'qr_code_data_url'  => $qrDataUrl,
+        ]);
+
+        $this->base44Webhook->notify('qr_generated', [
+            'qr' => $qrDataUrl,
         ]);
 
         return response()->json(['message' => 'QR updated']);
@@ -58,6 +67,12 @@ class WebhookController extends Controller
         }
 
         $this->base44->upsertAgentConfig($update);
+
+        $this->base44Webhook->notify('status_update', [
+            'status'  => $status,
+            'session' => $payload['session'] ?? null,
+            'phone'   => $payload['phone'] ?? null,
+        ]);
 
         return response()->json(['message' => 'Status updated']);
     }
