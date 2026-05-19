@@ -13,6 +13,7 @@ class AgentConfigController extends Controller
     public function __construct(
         private Base44Service $base44,
         private VpsWhatsAppService $vps,
+        private \App\Services\Base44WebhookService $base44Webhook,
     ) {}
 
     public function show(): JsonResponse
@@ -55,9 +56,8 @@ class AgentConfigController extends Controller
     {
         try {
             $this->vps->requestQr();
-            $this->base44->upsertAgentConfig([
-                'connection_status' => 'loading',
-                'qr_code_data_url'  => null,
+            $this->base44Webhook->notify('status_update', [
+                'status' => 'loading',
             ]);
             return response()->json(['message' => 'QR generation initiated']);
         } catch (RequestException $e) {
@@ -69,9 +69,8 @@ class AgentConfigController extends Controller
     {
         try {
             $this->vps->disconnect();
-            $this->base44->upsertAgentConfig([
-                'connection_status' => 'disconnected',
-                'qr_code_data_url'  => null,
+            $this->base44Webhook->notify('status_update', [
+                'status' => 'disconnected',
             ]);
             return response()->json(['message' => 'WhatsApp disconnected successfully']);
         } catch (RequestException $e) {

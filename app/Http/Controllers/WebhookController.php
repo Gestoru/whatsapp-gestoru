@@ -38,11 +38,6 @@ class WebhookController extends Controller
     {
         $qrDataUrl = $payload['qr_data_url'] ?? null;
 
-        $this->base44->upsertAgentConfig([
-            'connection_status' => 'scanning',
-            'qr_code_data_url'  => $qrDataUrl,
-        ]);
-
         $this->base44Webhook->notify('qr_generated', [
             'qr' => $qrDataUrl,
         ]);
@@ -53,20 +48,6 @@ class WebhookController extends Controller
     private function handleStatusChange(array $payload): JsonResponse
     {
         $status = $payload['status'] ?? 'disconnected';
-
-        $update = ['connection_status' => $status];
-
-        if ($status === 'connected') {
-            $update['whatsapp_session'] = $payload['session'] ?? null;
-            $update['qr_code_data_url'] = null;
-        }
-
-        if ($status === 'disconnected') {
-            $update['qr_code_data_url']  = null;
-            $update['whatsapp_session']  = null;
-        }
-
-        $this->base44->upsertAgentConfig($update);
 
         $this->base44Webhook->notify('status_update', [
             'status'  => $status,
