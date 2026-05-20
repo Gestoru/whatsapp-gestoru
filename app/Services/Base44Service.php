@@ -47,7 +47,7 @@ class Base44Service
 
     public function getEntity(string $entity, string $id): array
     {
-        return $this->request('GET', "apps/{$this->appId}/entities/{$entity}/{$id}/");
+        return $this->request('GET', "apps/{$this->appId}/entities/{$entity}/{$id}");
     }
 
     public function createEntity(string $entity, array $data): array
@@ -57,7 +57,7 @@ class Base44Service
 
     public function updateEntity(string $entity, string $id, array $data): array
     {
-        return $this->request('PATCH', "apps/{$this->appId}/entities/{$entity}/{$id}/", $data);
+        return $this->request('PATCH', "apps/{$this->appId}/entities/{$entity}/{$id}", $data);
     }
 
     public function uploadFile(string $filePath, string $mimeType, string $fileName): ?string
