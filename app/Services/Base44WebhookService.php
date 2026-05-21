@@ -23,6 +23,7 @@ class Base44WebhookService
             $response = Http::withHeaders([
                 'X-Webhook-Secret' => $secret,
                 'Base44-App-Id'    => $appId,
+                'base44-app-id'    => $appId,
                 'Content-Type'     => 'application/json',
                 'Accept'           => 'application/json',
             ])->timeout(10)->post($url, array_merge(['event' => $event], $payload));
