@@ -38,7 +38,7 @@ class WebhookController extends Controller
     {
         $qrDataUrl = $payload['qr_data_url'] ?? null;
 
-        $this->base44Webhook->notify('qr_generated', [
+        $this->base44Webhook->notify('qr_update', [
             'qr' => $qrDataUrl,
         ]);
 
