@@ -22,6 +22,8 @@ class Base44WebhookService
 
             $headers = [
                 'X-Webhook-Secret' => $secret,
+                'X-App-Id'         => $appId,
+                'x-app-id'         => $appId,
                 'Base44-App-Id'    => $appId,
                 'base44-app-id'    => $appId,
                 'Content-Type'     => 'application/json',
