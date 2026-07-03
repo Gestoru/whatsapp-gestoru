@@ -7,12 +7,13 @@ use GuzzleHttp\Exception\RequestException;
 use Illuminate\Console\Command;
 
 /**
- * Envío masivo de SMS a una lista de clientes vía Twilio.
+ * Envío masivo de mensajes a una lista de clientes vía Twilio,
+ * por SMS o por WhatsApp (se elige con --channel).
  *
  * Ejemplos:
- *   php artisan sms:send clientes.csv --message="Hola {{nombre}}, tenemos una oferta para ti."
- *   php artisan sms:send clientes.csv --message-file=mensaje.txt --dry-run
- *   php artisan sms:send clientes.csv --message="..." --delay=1 --results=salida.csv
+ *   php artisan messages:blast clientes.csv --channel=sms --message="Hola {{nombre}}, tenemos una oferta."
+ *   php artisan messages:blast clientes.csv --channel=whatsapp --message-file=mensaje.txt --dry-run
+ *   php artisan messages:blast clientes.csv --message="..." --default-country=1 --results=salida.csv
  *
  * Formato del CSV (con o sin cabecera):
  *   phone,name
@@ -22,27 +23,36 @@ use Illuminate\Console\Command;
  * Se admiten cabeceras en español (telefono/celular, nombre) o inglés (phone, name).
  * En el mensaje, {{nombre}} o {{name}} se reemplaza por el nombre del cliente.
  */
-class SendBulkSms extends Command
+class SendBulkMessages extends Command
 {
-    protected $signature = 'sms:send
+    protected $signature = 'messages:blast
         {recipients : Ruta al CSV con los clientes (columnas phone[,name])}
+        {--channel=sms : Canal de envío: sms o whatsapp}
         {--message= : Texto del mensaje a enviar}
         {--message-file= : Ruta a un archivo de texto con el mensaje}
-        {--from= : Remitente (nº E.164 o Messaging Service SID); por defecto TWILIO_SMS_FROM}
+        {--from= : Remitente puntual; por defecto TWILIO_SMS_FROM (sms) o TWILIO_WHATSAPP_FROM (whatsapp)}
         {--default-country= : Código de país (p. ej. 1 para RD/EE.UU., 34 España) que se antepone a los números sin prefijo +}
         {--delay=0 : Segundos de espera entre cada envío}
         {--dry-run : Simula el envío sin enviar nada}
         {--results= : Ruta donde guardar un CSV con el resultado de cada envío}';
 
-    protected $description = 'Envía un SMS a una lista de clientes mediante Twilio';
+    protected $description = 'Envía un mensaje (SMS o WhatsApp) a una lista de clientes mediante Twilio';
+
+    private const CHANNELS = ['sms', 'whatsapp'];
 
     public function handle(TwilioWhatsAppService $twilio): int
     {
-        $dryRun = (bool) $this->option('dry-run');
+        $dryRun  = (bool) $this->option('dry-run');
+        $channel = strtolower(trim((string) $this->option('channel')));
+
+        // ── Canal ────────────────────────────────────────────────────────────
+        if (!in_array($channel, self::CHANNELS, true)) {
+            $this->error('Canal no válido. Usa --channel=sms o --channel=whatsapp.');
+            return self::FAILURE;
+        }
 
         // ── Validaciones de configuración ────────────────────────────────────
-        if (!$dryRun && !$twilio->isSmsConfigured()) {
-            $this->error('Twilio SMS no está configurado. Define TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN y TWILIO_SMS_FROM en tu .env.');
+        if (!$dryRun && !$this->channelReady($twilio, $channel)) {
             return self::FAILURE;
         }
 
@@ -77,14 +87,15 @@ class SendBulkSms extends Command
             return self::FAILURE;
         }
 
-        $from  = $this->option('from');
+        $from  = $this->option('from') ?: null;
         $delay = max(0, (int) $this->option('delay'));
 
         $this->info(sprintf(
-            '%s%d destinatario(s) válido(s). Remitente: %s',
+            '%s[%s] %d destinatario(s) válido(s). Remitente: %s',
             $dryRun ? '[DRY-RUN] ' : '',
+            strtoupper($channel),
             count($recipients),
-            $from ?: config('services.twilio.sms_from') ?: '(TWILIO_SMS_FROM)'
+            $from ?: $this->defaultFrom($channel) ?: '(configurar remitente)'
         ));
 
         // ── Envío ────────────────────────────────────────────────────────────
@@ -103,7 +114,7 @@ class SendBulkSms extends Command
                 $row['detail'] = $body;
             } else {
                 try {
-                    $resp = $twilio->sendSms($r['phone'], $body, $from ?: null);
+                    $resp = $this->dispatch($twilio, $channel, $r['phone'], $body, $from);
                     $row['status'] = $resp['status'] ?? 'queued';
                     $row['detail'] = $resp['sid'] ?? '';
                     $sent++;
@@ -155,6 +166,40 @@ class SendBulkSms extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    // ── Envío por canal ──────────────────────────────────────────────────────
+
+    private function dispatch(TwilioWhatsAppService $twilio, string $channel, string $phone, string $body, ?string $from): array
+    {
+        return $channel === 'whatsapp'
+            ? $twilio->sendMessage($phone, $body)
+            : $twilio->sendSms($phone, $body, $from);
+    }
+
+    private function channelReady(TwilioWhatsAppService $twilio, string $channel): bool
+    {
+        if ($channel === 'whatsapp') {
+            if (!$twilio->isConfigured() || !config('services.twilio.whatsapp_from')) {
+                $this->error('WhatsApp por Twilio no está configurado. Define TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN y TWILIO_WHATSAPP_FROM en tu .env.');
+                return false;
+            }
+            return true;
+        }
+
+        if (!$twilio->isSmsConfigured()) {
+            $this->error('Twilio SMS no está configurado. Define TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN y TWILIO_SMS_FROM en tu .env.');
+            return false;
+        }
+
+        return true;
+    }
+
+    private function defaultFrom(string $channel): ?string
+    {
+        return $channel === 'whatsapp'
+            ? config('services.twilio.whatsapp_from')
+            : config('services.twilio.sms_from');
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

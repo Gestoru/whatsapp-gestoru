@@ -49,15 +49,17 @@ puedes poner `TWILIO_VALIDATE_SIGNATURE=false`.
 saliente actual (`MessageController`) sigue usando el VPS; para enrutarlo por
 Twilio, inyecta `TwilioWhatsAppService` en su lugar.
 
-## 5. Envío masivo de SMS a clientes
+## 5. Envío masivo a clientes (SMS o WhatsApp)
 
-Para SMS necesitas un número habilitado para SMS en Twilio y configurarlo:
+Un mismo comando, `messages:blast`, envía por **SMS** o por **WhatsApp** según
+`--channel`. Configura el remitente del canal que vayas a usar:
 
 ```env
-TWILIO_SMS_FROM=+1XXXXXXXXXX     # tu número SMS de Twilio, o un Messaging Service SID (MG...)
+TWILIO_SMS_FROM=+1XXXXXXXXXX        # nº SMS de Twilio (o Messaging Service SID MG...) — para --channel=sms
+TWILIO_WHATSAPP_FROM=+14155238886   # nº de WhatsApp de Twilio — para --channel=whatsapp
 ```
 
-Luego usa el comando `sms:send` con un CSV de clientes y el mensaje.
+Luego usa el comando con un CSV de clientes y el mensaje.
 
 ### CSV de clientes
 
@@ -79,25 +81,36 @@ Los números que no se puedan normalizar se **omiten** y se reportan como
 ### Comando
 
 ```bash
-# Ver primero qué se enviaría, sin enviar nada (recomendado):
-php artisan sms:send clientes.csv \
+# SMS — ver primero qué se enviaría, sin enviar nada (recomendado):
+php artisan messages:blast clientes.csv --channel=sms \
     --message="Hola {{nombre}}, tenemos una promoción para ti." \
     --default-country=1 --dry-run --results=resultado.csv
 
-# Envío real:
-php artisan sms:send clientes.csv \
+# SMS — envío real:
+php artisan messages:blast clientes.csv --channel=sms \
+    --message="Hola {{nombre}}, tenemos una promoción para ti." \
+    --default-country=1 --results=resultado.csv
+
+# WhatsApp — mismo comando, cambiando el canal:
+php artisan messages:blast clientes.csv --channel=whatsapp \
     --message="Hola {{nombre}}, tenemos una promoción para ti." \
     --default-country=1 --results=resultado.csv
 ```
 
 Opciones:
 
-| Opción              | Descripción                                                        |
-| ------------------- | ------------------------------------------------------------------ |
-| `--message`         | Texto del mensaje. `{{nombre}}` se reemplaza por el nombre.         |
-| `--message-file`    | Alternativa: lee el mensaje desde un archivo de texto.             |
-| `--default-country` | Código de país para números sin `+` (p. ej. `1`).                  |
-| `--from`            | Remitente puntual (nº o `MG...`); por defecto `TWILIO_SMS_FROM`.   |
-| `--delay`           | Segundos de espera entre envíos (para no saturar).                 |
-| `--dry-run`         | Simula sin enviar. Úsalo siempre antes del envío real.            |
-| `--results`         | Guarda un CSV con `phone,name,status,detail` de cada envío.        |
+| Opción              | Descripción                                                                 |
+| ------------------- | --------------------------------------------------------------------------- |
+| `--channel`         | `sms` (por defecto) o `whatsapp`.                                            |
+| `--message`         | Texto del mensaje. `{{nombre}}` se reemplaza por el nombre.                  |
+| `--message-file`    | Alternativa: lee el mensaje desde un archivo de texto.                       |
+| `--default-country` | Código de país para números sin `+` (p. ej. `1`).                           |
+| `--from`            | Remitente puntual; por defecto `TWILIO_SMS_FROM` / `TWILIO_WHATSAPP_FROM`.   |
+| `--delay`           | Segundos de espera entre envíos (para no saturar).                          |
+| `--dry-run`         | Simula sin enviar. Úsalo siempre antes del envío real.                      |
+| `--results`         | Guarda un CSV con `phone,name,status,detail` de cada envío.                  |
+
+> **WhatsApp:** Twilio solo permite iniciar conversaciones con **plantillas
+> aprobadas** si el cliente no te escribió en las últimas 24 h. Para campañas
+> masivas por WhatsApp, el texto debe corresponder a una plantilla aprobada en
+> tu cuenta. Por SMS no aplica esta restricción.
