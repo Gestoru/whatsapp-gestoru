@@ -22,12 +22,14 @@ class TwilioWhatsAppService
     private string $accountSid;
     private string $authToken;
     private ?string $whatsappFrom;
+    private ?string $smsFrom;
 
     public function __construct()
     {
         $this->accountSid   = (string) config('services.twilio.account_sid');
         $this->authToken    = (string) config('services.twilio.auth_token');
         $this->whatsappFrom = config('services.twilio.whatsapp_from');
+        $this->smsFrom      = config('services.twilio.sms_from');
 
         $this->client = new Client([
             'base_uri' => self::BASE_URI,
@@ -92,6 +94,46 @@ class TwilioWhatsAppService
         }
 
         return $this->post("Accounts/{$this->accountSid}/Messages.json", $payload);
+    }
+
+    /**
+     * Envía un SMS a través de Twilio.
+     *
+     * @param string      $phone Teléfono destino en E.164 (p. ej. +18095551234)
+     * @param string      $body  Texto del mensaje
+     * @param string|null $from  Remitente (nº E.164 o Messaging Service SID MG...).
+     *                           Si es null usa TWILIO_SMS_FROM.
+     */
+    public function sendSms(string $phone, string $body, ?string $from = null): array
+    {
+        $this->assertConfigured();
+
+        $from ??= $this->smsFrom;
+
+        if (!$from) {
+            throw new RuntimeException('TWILIO_SMS_FROM no está configurado.');
+        }
+
+        $payload = [
+            'To'   => $phone,
+            'Body' => $body,
+        ];
+
+        // Un Messaging Service SID empieza por "MG"; en ese caso se usa
+        // MessagingServiceSid en lugar de From.
+        if (str_starts_with($from, 'MG')) {
+            $payload['MessagingServiceSid'] = $from;
+        } else {
+            $payload['From'] = $from;
+        }
+
+        return $this->post("Accounts/{$this->accountSid}/Messages.json", $payload);
+    }
+
+    /** Indica si el envío de SMS está configurado (credenciales + remitente). */
+    public function isSmsConfigured(): bool
+    {
+        return $this->isConfigured() && !empty($this->smsFrom);
     }
 
     // ── Private ─────────────────────────────────────────────────────────────

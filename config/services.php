@@ -55,6 +55,8 @@ return [
         // Número de WhatsApp de Twilio en formato E.164, p. ej. +14155238886
         // (el sandbox de Twilio usa +14155238886).
         'whatsapp_from' => env('TWILIO_WHATSAPP_FROM'),
+        // Número (o Messaging Service SID) desde el que se envían los SMS, en E.164.
+        'sms_from'      => env('TWILIO_SMS_FROM'),
         // Si es true se valida la firma X-Twilio-Signature de los webhooks entrantes.
         'validate_signature' => (bool) env('TWILIO_VALIDATE_SIGNATURE', true),
     ],
