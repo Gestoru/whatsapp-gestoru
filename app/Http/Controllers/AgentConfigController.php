@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\Base44Service;
+use App\Services\TwilioWhatsAppService;
 use App\Services\VpsWhatsAppService;
 use GuzzleHttp\Exception\RequestException;
 use Illuminate\Http\JsonResponse;
@@ -13,6 +14,7 @@ class AgentConfigController extends Controller
     public function __construct(
         private Base44Service $base44,
         private VpsWhatsAppService $vps,
+        private TwilioWhatsAppService $twilio,
         private \App\Services\Base44WebhookService $base44Webhook,
     ) {}
 
@@ -88,6 +90,37 @@ class AgentConfigController extends Controller
             ]);
         } catch (RequestException $e) {
             return $this->base44Error($e);
+        }
+    }
+
+    /**
+     * Verifica la conexión con la cuenta de Twilio.
+     * Devuelve el estado y los datos de la cuenta si las credenciales son válidas.
+     */
+    public function twilioStatus(): JsonResponse
+    {
+        if (!$this->twilio->isConfigured()) {
+            return response()->json([
+                'connected' => false,
+                'error'     => 'Twilio no está configurado. Define TWILIO_ACCOUNT_SID y TWILIO_AUTH_TOKEN.',
+            ], 200);
+        }
+
+        try {
+            $account = $this->twilio->verifyConnection();
+
+            return response()->json([
+                'connected'     => ($account['status'] ?? null) === 'active',
+                'account_sid'   => $account['sid'] ?? null,
+                'friendly_name' => $account['friendly_name'] ?? null,
+                'status'        => $account['status'] ?? null,
+                'whatsapp_from' => config('services.twilio.whatsapp_from'),
+            ]);
+        } catch (RequestException $e) {
+            return response()->json([
+                'connected' => false,
+                'error'     => 'Twilio error: ' . $e->getMessage(),
+            ], 502);
         }
     }
 
