@@ -103,6 +103,8 @@
                 <span>{{ config('dashboard.title') }}<small>Panel de servidores · @yield('subtitle','todos en un solo lugar')</small></span>
             </a>
             <div class="row">
+                <a href="{{ route('dashboard.index') }}" class="btn btn-ghost btn-sm">🖥️ Servidores</a>
+                <a href="{{ route('dashboard.domains') }}" class="btn btn-ghost btn-sm">🌐 Dominios</a>
                 @yield('actions')
                 @if(config('dashboard.password'))
                     <form method="POST" action="{{ route('dashboard.logout') }}">

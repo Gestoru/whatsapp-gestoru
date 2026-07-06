@@ -61,11 +61,16 @@ class DashboardController extends Controller
             'needsCredentials' => ! $server->hasCredentials(),
         ];
 
+        $data['processes'] = ['cpu' => [], 'mem' => []];
+        $data['slow']      = ['enabled' => false, 'file' => null, 'top' => []];
+
         if (! $data['needsCredentials']) {
             try {
-                $data['metrics']  = $this->monitor->metrics($server);
-                $data['projects'] = $this->monitor->projects($server);
-                $data['domains']  = $this->monitor->domains($server);
+                $data['metrics']   = $this->monitor->metrics($server);
+                $data['projects']  = $this->monitor->projects($server);
+                $data['domains']   = $this->monitor->domains($server);
+                $data['processes'] = $this->monitor->topProcesses($server);
+                $data['slow']      = $this->monitor->slowQueries($server);
             } catch (\Throwable $e) {
                 $data['error'] = $e->getMessage();
             }

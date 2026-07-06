@@ -92,6 +92,22 @@
                 <textarea name="notes" rows="2" placeholder="Ej: aquí corre WhatsApp + la API">{{ old('notes',$server->notes) }}</textarea>
             </div>
 
+            <h2 style="margin:6px 0 12px;font-size:15px">💳 Plan y pago <span class="muted tiny" style="font-weight:400">(opcional)</span></h2>
+            <div class="form-grid">
+                <div class="field">
+                    <label>Plan vigente hasta / próxima fecha de pago</label>
+                    <input name="paid_until" type="date" value="{{ old('paid_until', optional($server->paid_until)->format('Y-m-d')) }}">
+                </div>
+                <div class="field">
+                    <label>Costo mensual (USD)</label>
+                    <input name="monthly_cost" type="number" step="0.01" min="0" value="{{ old('monthly_cost',$server->monthly_cost) }}" placeholder="18.00">
+                </div>
+            </div>
+            <div class="field">
+                <label>Enlace para pagar/renovar <span class="muted">(si lo dejas vacío usa el del proveedor)</span></label>
+                <input name="renewal_url" type="url" value="{{ old('renewal_url',$server->renewal_url) }}" placeholder="https://my.contabo.com/invoices">
+            </div>
+
             <div class="alert" style="background:#101a33;border-color:var(--line);color:var(--muted)">
                 🔒 Las credenciales se guardan <strong style="color:var(--text)">cifradas</strong> en la base de datos y nunca se muestran de vuelta.
             </div>

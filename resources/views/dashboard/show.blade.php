@@ -19,6 +19,44 @@
     </div>
     @if($server->notes)<p class="muted tiny" style="margin:0 0 8px">{{ $server->notes }}</p>@endif
 
+    {{-- ── Plan y pago ── --}}
+    @php($plevel = $server->paymentLevel())
+    @php($pdays = $server->paymentDaysLeft())
+    @php($ptone = ['due'=>['#2a1116','#5b2330','#fca5a5'],'warn'=>['#2e2410','#6b5316','#fcd34d'],'ok'=>['#0f2a1a','#1e5637','#86efac'],'unknown'=>['#101a33','var(--line)','var(--muted)']][$plevel])
+    <div class="card" style="margin:8px 0 4px;padding:14px 16px;background:{{ $ptone[0] }};border-color:{{ $ptone[1] }}">
+        <div class="row" style="justify-content:space-between;gap:12px">
+            <div class="row" style="gap:20px">
+                <div>
+                    <div class="k muted tiny">Plan vigente hasta</div>
+                    <div style="font-size:18px;font-weight:700;color:{{ $ptone[2] }}">
+                        {{ $server->paid_until ? $server->paid_until->format('d/m/Y') : 'Sin definir' }}
+                    </div>
+                    @if($pdays !== null)
+                        <div class="tiny" style="color:{{ $ptone[2] }}">
+                            @if($pdays < 0) venció hace {{ abs($pdays) }} días
+                            @elseif($pdays === 0) vence hoy
+                            @else faltan {{ $pdays }} días @endif
+                        </div>
+                    @endif
+                </div>
+                @if($server->monthly_cost)
+                    <div>
+                        <div class="k muted tiny">Costo mensual</div>
+                        <div style="font-size:18px;font-weight:700">US$ {{ number_format($server->monthly_cost, 2) }}</div>
+                    </div>
+                @endif
+            </div>
+            <div class="row">
+                @if(in_array($plevel, ['due','warn']) && $server->renewalLink())
+                    <a href="{{ $server->renewalLink() }}" target="_blank" rel="noopener" class="btn btn-primary btn-sm">💳 Pagar / renovar</a>
+                @elseif($server->renewalLink())
+                    <a href="{{ $server->renewalLink() }}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Ver facturación</a>
+                @endif
+                <a href="{{ route('dashboard.servers.edit', $server) }}#plan" class="btn btn-ghost btn-sm">✏️ Editar plan</a>
+            </div>
+        </div>
+    </div>
+
     <div id="test-result"></div>
 
     @if($needsCredentials)
@@ -78,16 +116,58 @@
         </div>
 
         {{-- ── Dominios ── --}}
-        <h2><span class="section-ic">🌐</span> Dominios <span class="muted tiny" style="font-weight:400">({{ count($domains) }})</span></h2>
+        <h2><span class="section-ic">🌐</span> Dominios <span class="muted tiny" style="font-weight:400">({{ count($domains) }}) · clic para ver su reporte</span></h2>
         <div class="list-card" style="padding:14px">
             @if(empty($domains))
                 <span class="muted tiny">No se detectaron dominios en la configuración de nginx/apache.</span>
             @else
                 <div class="row">
                     @foreach($domains as $d)
-                        <span class="pill">🌐 {{ $d }}</span>
+                        <a href="{{ route('dashboard.servers.domain', $server) }}?d={{ urlencode($d) }}" class="pill" style="cursor:pointer">🌐 {{ $d }} <span class="muted">→</span></a>
                     @endforeach
                 </div>
+            @endif
+        </div>
+
+        {{-- ── Procesos que más consumen ── --}}
+        <h2><span class="section-ic">🔥</span> Procesos que más consumen</h2>
+        <div class="grid" style="grid-template-columns:1fr 1fr;gap:16px">
+            @foreach([['cpu','Por CPU'],['mem','Por memoria']] as [$key,$label])
+                <div class="list-card">
+                    <div class="fb-head">{{ $label }}</div>
+                    @if(empty($processes[$key]))
+                        <div class="empty" style="padding:20px"><span class="muted tiny">Sin datos</span></div>
+                    @else
+                        <table>
+                            <thead><tr><th>%CPU</th><th>%MEM</th><th>Proceso</th></tr></thead>
+                            <tbody>
+                            @foreach($processes[$key] as $p)
+                                <tr>
+                                    <td style="font-weight:600">{{ $p['cpu'] }}</td>
+                                    <td style="font-weight:600">{{ $p['mem'] }}</td>
+                                    <td class="muted tiny" style="font-family:ui-monospace,monospace;word-break:break-all">{{ $p['command'] }}</td>
+                                </tr>
+                            @endforeach
+                            </tbody>
+                        </table>
+                    @endif
+                </div>
+            @endforeach
+        </div>
+
+        {{-- ── Consultas SQL lentas ── --}}
+        <h2><span class="section-ic">🐢</span> Consultas SQL lentas (MySQL/MariaDB)</h2>
+        <div class="list-card fb-file">
+            @if(! $slow['enabled'])
+                <div style="padding:16px">
+                    <span class="muted tiny">El registro de consultas lentas (slow query log) no está activo en este servidor.
+                    Cuando decidamos activarlo (Fase 2), aquí aparecerán las consultas que más demoran, listas para optimizar.</span>
+                </div>
+            @elseif(empty($slow['top']))
+                <div class="empty" style="padding:24px"><span class="muted tiny">Slow log activo ({{ $slow['file'] }}) y sin consultas lentas registradas 🎉</span></div>
+            @else
+                <div class="fb-head">Top consultas más lentas · {{ $slow['file'] }}</div>
+                <pre style="max-height:300px">{{ implode("\n", $slow['top']) }}</pre>
             @endif
         </div>
 

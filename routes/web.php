@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DomainAdminController;
+use App\Http\Controllers\DomainController;
 use App\Http\Controllers\ServerController;
 use App\Http\Controllers\ServerFileController;
 use Illuminate\Support\Facades\Route;
@@ -24,6 +26,18 @@ Route::middleware('dashboard.auth')->prefix('panel')->name('dashboard.')->group(
     Route::put('/servidores/{server}', [ServerController::class, 'update'])->name('servers.update');
     Route::delete('/servidores/{server}', [ServerController::class, 'destroy'])->name('servers.destroy');
     Route::post('/servidores/{server}/probar', [ServerController::class, 'test'])->name('servers.test');
+
+    // Observabilidad por dominio (Fase 1)
+    Route::get('/servidores/{server}/dominio', [DomainController::class, 'show'])->name('servers.domain');
+
+    // Administración de dominios (registradores y vencimientos)
+    Route::get('/dominios', [DomainAdminController::class, 'index'])->name('domains');
+    Route::post('/dominios', [DomainAdminController::class, 'store'])->name('domains.store');
+    Route::post('/dominios/escanear', [DomainAdminController::class, 'scan'])->name('domains.scan');
+    Route::post('/dominios/{domain}/whois', [DomainAdminController::class, 'whois'])->name('domains.whois');
+    Route::get('/dominios/{domain}/editar', [DomainAdminController::class, 'edit'])->name('domains.edit');
+    Route::put('/dominios/{domain}', [DomainAdminController::class, 'update'])->name('domains.update');
+    Route::delete('/dominios/{domain}', [DomainAdminController::class, 'destroy'])->name('domains.destroy');
 
     // Métricas y archivos (JSON)
     Route::get('/servidores/{server}/metricas', [DashboardController::class, 'metrics'])->name('servers.metrics');

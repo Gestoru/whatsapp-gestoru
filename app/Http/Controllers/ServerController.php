@@ -69,6 +69,9 @@ class ServerController extends Controller
             'color'          => 'nullable|string|max:9',
             'notes'          => 'nullable|string|max:2000',
             'is_active'      => 'nullable|boolean',
+            'paid_until'     => 'nullable|date',
+            'monthly_cost'   => 'nullable|numeric|min:0',
+            'renewal_url'    => 'nullable|url|max:500',
         ]);
     }
 
