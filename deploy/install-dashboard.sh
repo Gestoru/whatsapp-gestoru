@@ -19,9 +19,6 @@ set -uo pipefail
 
 APP_DIR="/opt/gestoru-dashboard"
 PORT="${DASHBOARD_PORT:-8088}"
-PHPV="8.3"
-PHP_BIN="/usr/bin/php${PHPV}"
-FPM_SOCK="/run/php/php${PHPV}-fpm.sock"
 
 log()  { echo -e "\n\033[1;36m▶ $*\033[0m"; }
 ok()   { echo -e "\033[1;32m✔ $*\033[0m"; }
@@ -43,21 +40,36 @@ log "Actualizando índices de paquetes (los errores de repositorios ajenos no de
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq 2>/dev/null || true
 
-if ! apt-cache show "php${PHPV}-cli" >/dev/null 2>&1; then
-    log "Agregando repositorio de PHP ${PHPV} (ppa:ondrej/php)…"
+# Detectar la mejor versión de PHP disponible (Laravel 12 exige >= 8.2)
+detect_php() {
+    for v in 8.4 8.3 8.2; do
+        if apt-cache show "php${v}-cli" >/dev/null 2>&1; then
+            echo "$v"
+            return 0
+        fi
+    done
+    return 1
+}
+
+PHPV="$(detect_php || true)"
+if [ -z "$PHPV" ]; then
+    log "Agregando repositorio de PHP (ppa:ondrej/php)…"
     apt-get install -y -qq software-properties-common >/dev/null 2>&1 || true
-    add-apt-repository -y ppa:ondrej/php >/dev/null 2>&1 || true
-    apt-get update -qq 2>/dev/null || true
-    if ! apt-cache show "php${PHPV}-cli" >/dev/null 2>&1; then
-        echo
-        echo "  El repositorio de PHP no quedó disponible. Suele deberse a otros"
-        echo "  repositorios dañados que bloquean 'apt-get update'. Repara con:"
-        echo
-        echo "  grep -rl 'apt.postgresql.org\\|repo.krakend.io' /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null | xargs -r -I{} sed -i 's/^[[:space:]]*deb/# deb/' {} ; apt-get update"
-        echo
-        fail "No se pudo preparar el repositorio de PHP ${PHPV}."
-    fi
+    add-apt-repository -y ppa:ondrej/php || true
+    apt-get update 2>&1 | tail -3 || true
+    PHPV="$(detect_php || true)"
 fi
+if [ -z "$PHPV" ]; then
+    echo
+    echo "  No se encontró PHP 8.2/8.3/8.4 en los repositorios. Versiones visibles:"
+    apt-cache search '^php[0-9.]*-cli' 2>/dev/null | sort | sed 's/^/    /'
+    echo
+    fail "No hay una versión de PHP compatible disponible. Envía una captura de este mensaje."
+fi
+
+PHP_BIN="/usr/bin/php${PHPV}"
+FPM_SOCK="/run/php/php${PHPV}-fpm.sock"
+ok "Se usará PHP ${PHPV}"
 
 log "Instalando PHP ${PHPV}, nginx y utilidades…"
 apt-get install -y -qq \
