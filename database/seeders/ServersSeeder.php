@@ -38,6 +38,13 @@ class ServersSeeder extends Seeder
                 'color' => '#a78bfa',
                 'notes' => 'Contabo vmi2229710 · Cloud VPS 30 SSD · US-central · aquí vive este panel',
             ],
+            [
+                'host'     => '72.14.182.249',
+                'name'     => 'Winhosting',
+                'provider' => 'winhosting',
+                'color'    => '#f472b6',
+                'notes'    => 'Servidor Winhosting · acceso SSH como root',
+            ],
         ];
 
         foreach ($servers as $data) {
