@@ -39,7 +39,7 @@ ssh root@157.173.194.26
 Copia y pega **todo esto en una sola línea** y presiona Enter:
 
 ```
-apt-get update && apt-get install -y git && rm -rf /root/gestoru-repo && git clone -b claude/contabo-server-dashboard-otvgl8 https://github.com/Gestoru/whatsapp-gestoru.git /root/gestoru-repo && bash /root/gestoru-repo/deploy/install-dashboard.sh
+apt-get update; apt-get install -y git && rm -rf /root/gestoru-repo && git clone -b claude/contabo-server-dashboard-otvgl8 https://github.com/Gestoru/whatsapp-gestoru.git /root/gestoru-repo && bash /root/gestoru-repo/deploy/install-dashboard.sh
 ```
 
 Tarda 2–5 minutos. Al final te pedirá:
