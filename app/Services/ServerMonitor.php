@@ -91,8 +91,8 @@ class ServerMonitor
         $domains = [];
 
         foreach (preg_split('/\r?\n/', trim($raw)) as $line) {
-            $line = trim($line);
-            if ($line !== '' && ! in_array($line, ['_', 'localhost'], true)) {
+            $line = strtolower(trim($line));
+            if ($this->isRealDomain($line)) {
                 $domains[$line] = $line;
             }
         }
@@ -100,6 +100,23 @@ class ServerMonitor
         ksort($domains);
 
         return array_values($domains);
+    }
+
+    /** Filtra placeholders y valores que no son dominios reales. */
+    private function isRealDomain(string $d): bool
+    {
+        if ($d === '' || str_starts_with($d, '*') || str_starts_with($d, '_')) {
+            return false;
+        }
+        // Placeholders y dominios de ejemplo/locales
+        $blacklist = ['localhost', 'example.com', 'example.org', 'example.net',
+            'test.com', 'domain.tld', 'yourdomain.com', 'localhost.localdomain'];
+        if (in_array($d, $blacklist, true) || str_ends_with($d, '.local') || str_ends_with($d, '.localdomain')) {
+            return false;
+        }
+
+        // Debe parecer un dominio válido (etiqueta.tld)
+        return (bool) preg_match('/^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/', $d);
     }
 
     /**
@@ -465,9 +482,21 @@ SH;
     {
         return <<<'SH'
 {
+  # nginx: configuración efectiva completa (incluye todos los include/)
+  nginx -T 2>/dev/null | grep -hoE 'server_name[[:space:]]+[^;]+;' | sed 's/server_name//;s/;//' | tr ' ' '\n'
+  # nginx: por si -T no está disponible, leer archivos directamente
   grep -rhoE 'server_name[[:space:]]+[^;]+;' /etc/nginx 2>/dev/null | sed 's/server_name//;s/;//' | tr ' ' '\n'
-  grep -rhoE 'ServerName[[:space:]]+[^ ]+' /etc/apache2 /etc/httpd 2>/dev/null | awk '{print $2}'
-  grep -rhoE 'ServerAlias[[:space:]]+.+' /etc/apache2 /etc/httpd 2>/dev/null | sed 's/ServerAlias//' | tr ' ' '\n'
+  # Apache: virtual hosts efectivos y directivas
+  { apache2ctl -S 2>/dev/null || apachectl -S 2>/dev/null || httpd -S 2>/dev/null; } | grep -oE 'namevhost [^ ]+' | awk '{print $2}'
+  grep -rhoE '(ServerName|ServerAlias)[[:space:]]+[^ ]+' /etc/apache2 /etc/httpd 2>/dev/null | awk '{print $2}'
+  # Certificados Let's Encrypt = dominios con HTTPS (fuente muy confiable)
+  ls /etc/letsencrypt/live 2>/dev/null | grep -v README
+  # Docker: dominios en labels de Traefik y variables VIRTUAL_HOST
+  if command -v docker >/dev/null 2>&1; then
+    for c in $(docker ps -q 2>/dev/null); do
+      docker inspect "$c" --format '{{range .Config.Env}}{{println .}}{{end}}{{range $k,$v := .Config.Labels}}{{println $v}}{{end}}' 2>/dev/null
+    done | grep -oE '([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}'
+  fi
 } 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -vE '^\*|^$' | sort -u
 SH;
     }
