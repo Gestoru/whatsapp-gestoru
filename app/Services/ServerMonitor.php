@@ -191,10 +191,55 @@ class ServerMonitor
     {
         $raw = $this->ssh->run(
             $server,
-            'nginx -T 2>/dev/null || cat /etc/nginx/nginx.conf /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*.conf 2>/dev/null'
+            'echo "==NGINX=="; nginx -T 2>/dev/null || cat /etc/nginx/nginx.conf /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*.conf 2>/dev/null; '
+            .'echo "==APACHE=="; cat /etc/apache2/sites-enabled/* /etc/apache2/vhosts.d/* /etc/httpd/conf.d/*.conf /etc/httpd/sites-enabled/* 2>/dev/null'
         );
 
-        return $this->parseNginxSites($raw);
+        $sections = $this->splitSections($raw);
+
+        return array_merge(
+            $this->parseNginxSites($sections['NGINX'] ?? ''),
+            $this->parseApacheSites($sections['APACHE'] ?? '')
+        );
+    }
+
+    /**
+     * Diagnóstico: dónde aparece configurado un dominio en el servidor.
+     * Útil cuando el reporte no encuentra logs (sitio servido por Docker, etc.).
+     *
+     * @return array<string, array<int, string>>
+     */
+    public function domainDiagnostic(Server $server, string $domain): array
+    {
+        $d = escapeshellarg($domain);
+        $script = <<<SH
+echo "==NGINX=="
+grep -rl {$d} /etc/nginx 2>/dev/null | head -5
+echo "==APACHE=="
+grep -rl {$d} /etc/apache2 /etc/httpd 2>/dev/null | head -5
+echo "==SSL=="
+ls /etc/letsencrypt/live 2>/dev/null | grep -i "\$(echo {$d} | sed 's/^www\\.//')" | head -5
+echo "==DOCKER=="
+if command -v docker >/dev/null 2>&1; then
+  for c in \$(docker ps -q 2>/dev/null); do
+    if docker inspect "\$c" 2>/dev/null | grep -qi {$d}; then
+      docker ps --filter "id=\$c" --format '{{.Names}} · {{.Image}} · {{.Ports}}' 2>/dev/null
+    fi
+  done
+fi
+echo "==LOGS=="
+ls -1 /var/log/nginx/ /var/log/apache2/ /var/log/httpd/ 2>/dev/null | grep -iE "access|\$(echo {$d} | cut -d. -f1)" | head -10
+SH;
+
+        $sections = $this->splitSections($this->ssh->run($server, $script));
+
+        return [
+            'nginx'  => $this->nonEmptyLines($sections['NGINX'] ?? ''),
+            'apache' => $this->nonEmptyLines($sections['APACHE'] ?? ''),
+            'ssl'    => $this->nonEmptyLines($sections['SSL'] ?? ''),
+            'docker' => $this->nonEmptyLines($sections['DOCKER'] ?? ''),
+            'logs'   => $this->nonEmptyLines($sections['LOGS'] ?? ''),
+        ];
     }
 
     /**
@@ -763,6 +808,57 @@ SH;
         }
 
         return $rows;
+    }
+
+    /**
+     * Parser de bloques <VirtualHost> de Apache.
+     *
+     * @return array<int, array{domains: array<int,string>, root: ?string, access_log: string, error_log: string}>
+     */
+    private function parseApacheSites(string $conf): array
+    {
+        if (trim($conf) === '') {
+            return [];
+        }
+
+        $sites = [];
+        if (! preg_match_all('/<VirtualHost[^>]*>(.*?)<\/VirtualHost>/is', $conf, $blocks)) {
+            return [];
+        }
+
+        foreach ($blocks[1] as $block) {
+            $domains = [];
+            if (preg_match('/^\s*ServerName\s+([^\s:]+)/im', $block, $m)) {
+                $domains[] = strtolower($m[1]);
+            }
+            if (preg_match_all('/^\s*ServerAlias\s+(.+)$/im', $block, $mm)) {
+                foreach ($mm[1] as $aliases) {
+                    foreach (preg_split('/\s+/', trim($aliases)) as $a) {
+                        if ($a !== '') {
+                            $domains[] = strtolower($a);
+                        }
+                    }
+                }
+            }
+            $domains = array_values(array_filter(array_unique($domains), fn ($d) => $this->isRealDomain($d)));
+            if (empty($domains)) {
+                continue;
+            }
+
+            $first = fn (string $dir, string $def) => preg_match('/^\s*'.$dir.'\s+"?([^\s"]+)/im', $block, $x) ? $x[1] : $def;
+
+            // CustomLog "ruta" formato → tomamos la ruta
+            $accessLog = preg_match('/^\s*CustomLog\s+"?([^\s"]+)/im', $block, $c) ? $c[1] : '/var/log/apache2/access.log';
+
+            $sites[] = [
+                'domains'    => $domains,
+                'root'       => $first('DocumentRoot', ''),
+                'access_log' => $accessLog,
+                'error_log'  => $first('ErrorLog', '/var/log/apache2/error.log'),
+            ];
+        }
+
+        return $sites;
     }
 
     /** @return array<string, string> */

@@ -14,6 +14,42 @@
 
     @if($error)
         <div class="alert alert-bad" style="margin-top:12px">{{ $error }}</div>
+
+        @if(!empty($diagnostic))
+            <h2><span class="section-ic">🔎</span> ¿Dónde está configurado este dominio?</h2>
+            <p class="muted tiny" style="margin-top:-6px">Esto me dice cómo sirves el sitio, para poder leer sus estadísticas.</p>
+
+            @php($found = collect($diagnostic)->flatten()->isNotEmpty())
+            @unless($found)
+                <div class="list-card" style="padding:16px">
+                    <span class="muted tiny">No encontré rastro de este dominio en nginx, Apache, certificados SSL ni Docker de este servidor. Puede que el dominio apunte (DNS) a otro servidor, o que el nombre no coincida exactamente con el configurado.</span>
+                </div>
+            @else
+                <div class="grid" style="grid-template-columns:1fr 1fr;gap:16px">
+                    @foreach([
+                        'nginx'=>['🟩','Archivos de nginx'],
+                        'apache'=>['🟧','Archivos de Apache'],
+                        'ssl'=>['🔒','Certificados SSL (Let\'s Encrypt)'],
+                        'docker'=>['🐳','Contenedores Docker'],
+                        'logs'=>['📄','Logs disponibles'],
+                    ] as $key=>[$ic,$label])
+                        @if(!empty($diagnostic[$key]))
+                            <div class="list-card">
+                                <div class="fb-head">{{ $ic }} {{ $label }}</div>
+                                <div style="padding:10px 14px">
+                                    @foreach($diagnostic[$key] as $line)
+                                        <div style="font-family:ui-monospace,monospace;font-size:12px;padding:3px 0;word-break:break-all">{{ $line }}</div>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endif
+                    @endforeach
+                </div>
+                <div class="alert" style="background:#101a33;border-color:var(--line);color:var(--muted);margin-top:14px">
+                    💡 Si el dominio aparece en <strong style="color:var(--text)">Docker</strong>, el sitio corre dentro de un contenedor y sus estadísticas de tráfico están dentro de ese contenedor, no en los logs del sistema. Mándame este pantallazo y te digo cómo leerlas.
+                </div>
+            @endunless
+        @endif
     @elseif($report)
         @if($site && $site['root'])
             <p class="muted tiny" style="margin:4px 0 0">Carpeta del proyecto: <span style="font-family:ui-monospace,monospace">{{ $site['root'] }}</span></p>

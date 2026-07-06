@@ -17,11 +17,12 @@ class DomainController extends Controller
         $domain = $request->query('d');
 
         $data = [
-            'server' => $server,
-            'domain' => $domain,
-            'site'   => null,
-            'report' => null,
-            'error'  => null,
+            'server'     => $server,
+            'domain'     => $domain,
+            'site'       => null,
+            'report'     => null,
+            'error'      => null,
+            'diagnostic' => null,
         ];
 
         if (! $server->hasCredentials()) {
@@ -36,7 +37,8 @@ class DomainController extends Controller
             if ($data['site']) {
                 $data['report'] = $this->monitor->domainReport($server, $data['site']);
             } else {
-                $data['error'] = 'No encontré la configuración nginx de este dominio en el servidor.';
+                $data['error']      = 'No encontré una configuración de nginx/Apache con logs para este dominio en el servidor.';
+                $data['diagnostic'] = $this->monitor->domainDiagnostic($server, $domain);
             }
         } catch (\Throwable $e) {
             $data['error'] = $e->getMessage();
