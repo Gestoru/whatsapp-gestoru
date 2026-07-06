@@ -46,8 +46,17 @@ apt-get update -qq 2>/dev/null || true
 if ! apt-cache show "php${PHPV}-cli" >/dev/null 2>&1; then
     log "Agregando repositorio de PHP ${PHPV} (ppa:ondrej/php)…"
     apt-get install -y -qq software-properties-common >/dev/null 2>&1 || true
-    add-apt-repository -y ppa:ondrej/php >/dev/null 2>&1 || fail "No se pudo agregar el repositorio de PHP."
+    add-apt-repository -y ppa:ondrej/php >/dev/null 2>&1 || true
     apt-get update -qq 2>/dev/null || true
+    if ! apt-cache show "php${PHPV}-cli" >/dev/null 2>&1; then
+        echo
+        echo "  El repositorio de PHP no quedó disponible. Suele deberse a otros"
+        echo "  repositorios dañados que bloquean 'apt-get update'. Repara con:"
+        echo
+        echo "  grep -rl 'apt.postgresql.org\\|repo.krakend.io' /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null | xargs -r -I{} sed -i 's/^[[:space:]]*deb/# deb/' {} ; apt-get update"
+        echo
+        fail "No se pudo preparar el repositorio de PHP ${PHPV}."
+    fi
 fi
 
 log "Instalando PHP ${PHPV}, nginx y utilidades…"
