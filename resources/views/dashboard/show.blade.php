@@ -5,6 +5,7 @@
 @section('actions')
     <a href="{{ route('dashboard.index') }}" class="btn btn-ghost btn-sm">← Servidores</a>
     <a href="{{ route('dashboard.servers.analytics', $server) }}" class="btn btn-primary btn-sm">📈 Análisis inteligente</a>
+    <a href="{{ route('dashboard.servers.trends', $server) }}" class="btn btn-sm">📉 Tendencias</a>
     <button id="btn-test" class="btn btn-sm" data-url="{{ route('dashboard.servers.test', $server) }}">🔌 Probar conexión</button>
     <a href="{{ route('dashboard.servers.edit', $server) }}" class="btn btn-sm">✏️ Editar</a>
 @endsection

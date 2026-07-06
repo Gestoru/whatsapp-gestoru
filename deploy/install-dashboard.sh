@@ -207,6 +207,16 @@ touch database/database.sqlite
 "$PHP_BIN" artisan config:clear >/dev/null 2>&1 || true
 ok "Base de datos lista"
 
+# ── Muestreo automático de métricas (histórico / Fase 2) ────────────────────
+log "Programando el muestreo automático de métricas (cada 5 min)…"
+cat > /etc/cron.d/gestoru-dashboard <<CRON
+# Histórico de métricas del dashboard de infraestructura Gestoru
+*/5 * * * * www-data cd ${APP_DIR} && ${PHP_BIN} artisan metrics:sample >/dev/null 2>&1
+CRON
+chmod 644 /etc/cron.d/gestoru-dashboard
+systemctl restart cron 2>/dev/null || systemctl restart crond 2>/dev/null || true
+ok "Muestreo automático programado"
+
 chown -R www-data:www-data "$APP_DIR"
 chmod -R ug+rwX storage bootstrap/cache database
 

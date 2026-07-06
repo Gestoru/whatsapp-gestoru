@@ -79,6 +79,23 @@ class DashboardController extends Controller
         return view('dashboard.show', array_merge(['server' => $server], $data));
     }
 
+    /** Histórico de métricas: gráficas de tendencia (Fase 2). */
+    public function trends(Request $request, Server $server)
+    {
+        $hours = (int) $request->query('h', 24);
+        $hours = in_array($hours, [6, 24, 72, 168], true) ? $hours : 24;
+
+        $samples = \App\Models\MetricSample::where('server_id', $server->id)
+            ->where('sampled_at', '>=', now()->subHours($hours))
+            ->orderBy('sampled_at')
+            ->get();
+
+        // Pico de CPU del rango (para señalar el culpable)
+        $peak = $samples->sortByDesc('cpu_pct')->first();
+
+        return view('dashboard.trends', compact('server', 'samples', 'hours', 'peak'));
+    }
+
     /** Reporte analítico integral: CPU, RAM, ancho de banda y MySQL. */
     public function analytics(Server $server)
     {
