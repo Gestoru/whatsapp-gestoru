@@ -40,10 +40,17 @@ log "Actualizando índices de paquetes (los errores de repositorios ajenos no de
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq 2>/dev/null || true
 
-# Detectar la mejor versión de PHP disponible (Laravel 12 exige >= 8.2)
+# Detectar la mejor versión de PHP disponible (Laravel 12 exige >= 8.2).
+# 'avail' exige que el paquete tenga candidato DESCARGABLE en los repos
+# (apt-cache show también lista paquetes ya instalados sin repo, y eso engaña).
+avail() {
+    apt-cache policy "$1" 2>/dev/null | awk '/Candidate:/ {print $2}' | grep -q . \
+        && ! apt-cache policy "$1" 2>/dev/null | grep -q 'Candidate: (none)'
+}
+
 detect_php() {
     for v in 8.4 8.3 8.2; do
-        if apt-cache show "php${v}-cli" >/dev/null 2>&1; then
+        if avail "php${v}-cli" && avail "php${v}-fpm" && avail "php${v}-sqlite3"; then
             echo "$v"
             return 0
         fi
@@ -52,17 +59,39 @@ detect_php() {
 }
 
 PHPV="$(detect_php || true)"
+
 if [ -z "$PHPV" ]; then
     log "Agregando repositorio de PHP (ppa:ondrej/php)…"
     apt-get install -y -qq software-properties-common >/dev/null 2>&1 || true
-    add-apt-repository -y ppa:ondrej/php || true
-    apt-get update 2>&1 | tail -3 || true
+    add-apt-repository -y ppa:ondrej/php >/dev/null 2>&1 || true
+    apt-get update -qq 2>/dev/null || true
     PHPV="$(detect_php || true)"
 fi
+
+if [ -z "$PHPV" ]; then
+    log "Registrando el repositorio de PHP manualmente…"
+    apt-get install -y -qq curl gnupg ca-certificates >/dev/null 2>&1 || true
+    . /etc/os-release
+    CODENAME="${UBUNTU_CODENAME:-focal}"
+    mkdir -p /etc/apt/keyrings
+    curl -fsSL 'https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x14AA40EC0831756756D7F66C4F4EA0AAE5267A6C' \
+        | gpg --dearmor --yes -o /etc/apt/keyrings/ondrej-php.gpg 2>/dev/null \
+        || fail "No se pudo descargar la llave del repositorio de PHP (revisa la conexión a internet del servidor)."
+    echo "deb [signed-by=/etc/apt/keyrings/ondrej-php.gpg] https://ppa.launchpadcontent.net/ondrej/php/ubuntu ${CODENAME} main" \
+        > /etc/apt/sources.list.d/gestoru-ondrej-php.list
+    apt-get update 2>&1 | grep -Ei 'ondrej|err' | sed 's/^/    /' || true
+    PHPV="$(detect_php || true)"
+fi
+
 if [ -z "$PHPV" ]; then
     echo
-    echo "  No se encontró PHP 8.2/8.3/8.4 en los repositorios. Versiones visibles:"
-    apt-cache search '^php[0-9.]*-cli' 2>/dev/null | sort | sed 's/^/    /'
+    echo "  No se encontró PHP 8.2/8.3/8.4 instalable. Diagnóstico:"
+    echo "  --- paquetes php visibles ---"
+    apt-cache search '^php8\.[0-9]-cli' 2>/dev/null | sort | sed 's/^/    /'
+    echo "  --- estado de php8.2-cli y php8.2-sqlite3 ---"
+    apt-cache policy php8.2-cli php8.2-sqlite3 2>/dev/null | sed 's/^/    /'
+    echo "  --- fuentes de ondrej ---"
+    grep -rh 'ondrej' /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null | sed 's/^/    /'
     echo
     fail "No hay una versión de PHP compatible disponible. Envía una captura de este mensaje."
 fi
