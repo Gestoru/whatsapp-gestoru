@@ -202,6 +202,8 @@ log "Preparando base de datos…"
 mkdir -p database
 touch database/database.sqlite
 "$PHP_BIN" artisan migrate --force || fail "Fallaron las migraciones."
+"$PHP_BIN" artisan db:seed --class=ServersSeeder --force >/dev/null 2>&1 \
+    && ok "Servidores de la empresa pre-cargados" || true
 "$PHP_BIN" artisan config:clear >/dev/null 2>&1 || true
 ok "Base de datos lista"
 

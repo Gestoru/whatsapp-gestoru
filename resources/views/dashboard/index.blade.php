@@ -62,6 +62,7 @@ async function loadCard(card){
     try{
         const r = await fetch(card.dataset.metricsUrl, {headers:{'Accept':'application/json'}});
         const d = await r.json();
+        if(d.needs_credentials){ markNeedsPassword(card); return; }
         if(!d.ok) throw new Error(d.error||'error');
         const m = d.metrics;
         dot.classList.add('ok'); statusText.textContent = 'En línea';
@@ -73,6 +74,13 @@ async function loadCard(card){
     }catch(e){
         dot.classList.add('bad'); statusText.textContent = 'Sin conexión';
     }
+}
+
+function markNeedsPassword(card){
+    const dot = card.querySelector('.js-status .dot');
+    dot.style.background = 'var(--warn)'; dot.style.boxShadow = '0 0 8px var(--warn)';
+    card.querySelector('.js-status-text').textContent = 'Falta contraseña';
+    card.querySelector('.js-os').textContent = 'Ábrelo y ponle su contraseña root para empezar a monitorearlo';
 }
 document.querySelectorAll('[data-server]').forEach(loadCard);
 </script>

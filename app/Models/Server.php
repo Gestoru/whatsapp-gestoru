@@ -41,6 +41,16 @@ class Server extends Model
         ];
     }
 
+    /**
+     * ¿Ya tiene credenciales para conectarse?
+     */
+    public function hasCredentials(): bool
+    {
+        return $this->auth_type === 'key'
+            ? filled($this->private_key)
+            : filled($this->password);
+    }
+
     public function getProviderLabelAttribute(): string
     {
         return match ($this->provider) {

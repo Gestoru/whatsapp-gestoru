@@ -11,13 +11,23 @@
 @section('content')
     <div class="row" style="justify-content:space-between;margin-bottom:6px">
         <h1>{{ $server->name }}</h1>
-        <span class="pill"><span class="dot {{ $error ? 'bad':'ok' }}"></span>{{ $error ? 'Sin conexión' : 'En línea' }}</span>
+        @if($needsCredentials)
+            <span class="pill"><span class="dot" style="background:var(--warn);box-shadow:0 0 8px var(--warn)"></span>Falta contraseña</span>
+        @else
+            <span class="pill"><span class="dot {{ $error ? 'bad':'ok' }}"></span>{{ $error ? 'Sin conexión' : 'En línea' }}</span>
+        @endif
     </div>
     @if($server->notes)<p class="muted tiny" style="margin:0 0 8px">{{ $server->notes }}</p>@endif
 
     <div id="test-result"></div>
 
-    @if($error)
+    @if($needsCredentials)
+        <div class="alert" style="background:#2e2410;border-color:#6b5316;color:#fcd34d">
+            <strong>🔑 Este servidor está pre-cargado pero aún no tiene su contraseña.</strong><br>
+            <span class="tiny">Ponle la contraseña root de este servidor para empezar a ver su rendimiento, proyectos y archivos.</span>
+        </div>
+        <a href="{{ route('dashboard.servers.edit', $server) }}" class="btn btn-primary">🔑 Poner contraseña ahora</a>
+    @elseif($error)
         <div class="alert alert-bad">
             <strong>No se pudo conectar al servidor.</strong><br>
             <span class="tiny">{{ $error }}</span><br>
@@ -110,7 +120,7 @@ const CSRF = document.querySelector('meta[name=csrf-token]').content;
 const barColor = p => p >= 90 ? 'var(--bad)' : p >= 70 ? 'var(--warn)' : 'var(--ok)';
 const j = (el,html)=>el.innerHTML=html;
 
-@if(!$error)
+@if(!$error && !$needsCredentials)
 // ── Métricas iniciales (render server-side friendly): pintamos con los datos ya cargados
 const M = @json($metrics);
 function paint(){

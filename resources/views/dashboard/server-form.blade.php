@@ -60,8 +60,9 @@
             </div>
 
             <div class="field auth-password">
-                <label>Contraseña SSH @if($editing)<span class="muted">(dejar vacío para no cambiar)</span>@endif</label>
-                <input name="password" type="password" autocomplete="new-password" placeholder="••••••••">
+                <label>Contraseña SSH @if($editing && $server->hasCredentials())<span class="muted">(dejar vacío para no cambiar)</span>@endif</label>
+                <input name="password" type="password" autocomplete="new-password" placeholder="••••••••"
+                       @if($editing && ! $server->hasCredentials()) autofocus @endif>
             </div>
 
             <div class="auth-key" style="display:none">

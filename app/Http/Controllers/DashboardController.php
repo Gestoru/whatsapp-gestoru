@@ -54,18 +54,21 @@ class DashboardController extends Controller
     public function show(Server $server)
     {
         $data = [
-            'metrics'  => null,
-            'projects' => [],
-            'domains'  => [],
-            'error'    => null,
+            'metrics'          => null,
+            'projects'         => [],
+            'domains'          => [],
+            'error'            => null,
+            'needsCredentials' => ! $server->hasCredentials(),
         ];
 
-        try {
-            $data['metrics']  = $this->monitor->metrics($server);
-            $data['projects'] = $this->monitor->projects($server);
-            $data['domains']  = $this->monitor->domains($server);
-        } catch (\Throwable $e) {
-            $data['error'] = $e->getMessage();
+        if (! $data['needsCredentials']) {
+            try {
+                $data['metrics']  = $this->monitor->metrics($server);
+                $data['projects'] = $this->monitor->projects($server);
+                $data['domains']  = $this->monitor->domains($server);
+            } catch (\Throwable $e) {
+                $data['error'] = $e->getMessage();
+            }
         }
 
         return view('dashboard.show', array_merge(['server' => $server], $data));
@@ -74,6 +77,10 @@ class DashboardController extends Controller
     /** Endpoint JSON para refrescar solo las métricas (auto-refresh). */
     public function metrics(Server $server)
     {
+        if (! $server->hasCredentials()) {
+            return response()->json(['ok' => false, 'needs_credentials' => true], 200);
+        }
+
         try {
             return response()->json(['ok' => true, 'metrics' => $this->monitor->metrics($server)]);
         } catch (\Throwable $e) {
