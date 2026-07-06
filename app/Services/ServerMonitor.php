@@ -308,7 +308,103 @@ SH;
         ];
     }
 
+    /**
+     * Reporte analítico integral del servidor: CPU, RAM (por proceso y por
+     * programa), conexiones de red, MySQL (procesos activos, tamaño de BD,
+     * consultas lentas) y ancho de banda + peticiones por dominio.
+     *
+     * @return array<string, mixed>
+     */
+    public function analytics(Server $server): array
+    {
+        // Mapear cada log de acceso a sus dominios (para el desglose por dominio)
+        $sites   = $this->sites($server);
+        $logMap  = [];   // access_log => [dominios]
+        foreach ($sites as $s) {
+            $logMap[$s['access_log']] = array_merge($logMap[$s['access_log']] ?? [], $s['domains']);
+        }
+        $logs = array_keys($logMap);
+        // Si no hay sitios, usar el log por defecto
+        if (empty($logs)) {
+            $logs = ['/var/log/nginx/access.log'];
+        }
+        $logArgs = implode(' ', array_map('escapeshellarg', $logs));
+
+        $raw      = $this->ssh->run($server, $this->analyticsScript($logArgs));
+        $sections = $this->splitSections($raw);
+
+        // Ancho de banda / peticiones por log → mapear a dominios
+        $perLog = $this->parseBandwidthLogs($sections['BANDWIDTH'] ?? '');
+        $domains = [];
+        foreach ($perLog as $log => $stats) {
+            $names = $logMap[$log] ?? [basename($log)];
+            $domains[] = [
+                'label'    => implode(', ', $names),
+                'requests' => $stats['req'],
+                'bytes'    => $stats['bytes'],
+                'human'    => $this->humanBytes($stats['bytes']),
+                'ips'      => $stats['ips'],
+            ];
+        }
+        usort($domains, fn ($a, $b) => $b['bytes'] <=> $a['bytes']);
+
+        $totalReq   = array_sum(array_column($domains, 'requests'));
+        $totalBytes = array_sum(array_column($domains, 'bytes'));
+
+        $mysqlProc = $this->parsePipeTable($sections['MYSQLPROC'] ?? '', ['id', 'user', 'db', 'time', 'state', 'info']);
+        $mysqlDb   = $this->parsePipeTable($sections['MYSQLDB'] ?? '', ['db', 'mb']);
+
+        return [
+            'top_summary' => $this->nonEmptyLines($sections['TOPSUMMARY'] ?? ''),
+            'cpu'         => $this->parsePsLines($sections['CPUTOP'] ?? ''),
+            'mem'         => $this->parsePsLines($sections['MEMTOP'] ?? ''),
+            'mem_by_prog' => $this->parseMemByProgram($sections['MEMPROG'] ?? ''),
+            'connections' => $this->parseCountLines($this->reorderCount($sections['CONN'] ?? '')),
+            'top_ips'     => $this->parseCountLines($sections['TOPIPS'] ?? ''),
+            'domains'     => $domains,
+            'total_requests' => $totalReq,
+            'total_bandwidth' => $this->humanBytes($totalBytes),
+            'heavy_paths' => $this->parseBytesPaths($sections['HEAVYPATHS'] ?? ''),
+            'mysql_available' => ! empty($mysqlDb) || ! empty($mysqlProc),
+            'mysql_processes' => $mysqlProc,
+            'mysql_databases' => $mysqlDb,
+        ];
+    }
+
     // ── Scripts remotos ─────────────────────────────────────────────────────
+
+    private function analyticsScript(string $logArgs): string
+    {
+        return <<<SH
+TODAY=\$(date '+%d/%b/%Y')
+echo "==TOPSUMMARY=="
+top -bn1 2>/dev/null | head -5
+echo "==CPUTOP=="
+ps aux --sort=-%cpu 2>/dev/null | head -13
+echo "==MEMTOP=="
+ps aux --sort=-%mem 2>/dev/null | head -13
+echo "==MEMPROG=="
+ps -eo rss,comm --no-headers 2>/dev/null | awk '{a[\$2]+=\$1} END{for(k in a) print a[k]"\t"k}' | sort -rn | head -12
+echo "==CONN=="
+ss -tan 2>/dev/null | awk 'NR>1{s[\$1]++} END{for(k in s) print s[k]"\t"k}' | sort -rn
+echo "==TOPIPS=="
+ss -tan state established 2>/dev/null | awk 'NR>1{print \$4}' | sed 's/:[0-9]*\$//' | sort | uniq -c | sort -rn | head -8
+echo "==BANDWIDTH=="
+for L in {$logArgs}; do
+  if [ -f "\$L" ]; then
+    awk -v d="[\$TODAY" -v log="\$L" '\$0 ~ d {req++; ip[\$1]=1; b+=\$10} END{n=0; for(k in ip)n++; print log"\t"req+0"\t"b+0"\t"n}' "\$L"
+  fi
+done
+echo "==HEAVYPATHS=="
+for L in {$logArgs}; do
+  [ -f "\$L" ] && awk -v d="[\$TODAY" '\$0 ~ d {u=\$7; sub(/\\?.*/,"",u); bytes[u]+=\$10; cnt[u]++} END{for(k in bytes) print bytes[k]"\t"cnt[k]"\t"k}' "\$L"
+done | sort -rn | head -12
+echo "==MYSQLPROC=="
+mysql -N -B -e "SELECT id,user,COALESCE(db,'-'),time,COALESCE(state,'-'),COALESCE(LEFT(info,80),'-') FROM information_schema.processlist WHERE command<>'Sleep' AND info IS NOT NULL ORDER BY time DESC LIMIT 15" 2>/dev/null
+echo "==MYSQLDB=="
+mysql -N -B -e "SELECT table_schema, ROUND(SUM(data_length+index_length)/1048576,1) FROM information_schema.tables GROUP BY table_schema ORDER BY 2 DESC LIMIT 12" 2>/dev/null
+SH;
+    }
 
     private function metricsScript(): string
     {
@@ -534,6 +630,110 @@ SH;
         }
 
         return array_values($unique);
+    }
+
+    /**
+     * Parsea líneas "log\treq\tbytes\tips" del bloque BANDWIDTH.
+     *
+     * @return array<string, array{req: int, bytes: int, ips: int}>
+     */
+    private function parseBandwidthLogs(string $raw): array
+    {
+        $out = [];
+        foreach (preg_split('/\r?\n/', trim($raw)) as $line) {
+            $p = explode("\t", $line);
+            if (count($p) >= 4) {
+                $out[$p[0]] = ['req' => (int) $p[1], 'bytes' => (int) $p[2], 'ips' => (int) $p[3]];
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Parsea "rssKB\tprograma" a filas con memoria legible.
+     *
+     * @return array<int, array{program: string, bytes: int, human: string}>
+     */
+    private function parseMemByProgram(string $raw): array
+    {
+        $rows = [];
+        foreach (preg_split('/\r?\n/', trim($raw)) as $line) {
+            $p = explode("\t", $line, 2);
+            if (count($p) === 2 && is_numeric(trim($p[0]))) {
+                $bytes = (int) trim($p[0]) * 1024;
+                $rows[] = ['program' => trim($p[1]), 'bytes' => $bytes, 'human' => $this->humanBytes($bytes)];
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Parsea "bytes\tcount\tpath" (rutas más pesadas por ancho de banda).
+     *
+     * @return array<int, array{bytes: int, human: string, count: int, path: string}>
+     */
+    private function parseBytesPaths(string $raw): array
+    {
+        $rows = [];
+        foreach (preg_split('/\r?\n/', trim($raw)) as $line) {
+            $p = explode("\t", $line, 3);
+            if (count($p) === 3 && is_numeric(trim($p[0]))) {
+                $bytes = (int) trim($p[0]);
+                $rows[] = [
+                    'bytes' => $bytes,
+                    'human' => $this->humanBytes($bytes),
+                    'count' => (int) trim($p[1]),
+                    'path'  => trim($p[2]),
+                ];
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Convierte "count\tvalue" (salida de awk) a "count value" (para parseCountLines).
+     */
+    private function reorderCount(string $raw): string
+    {
+        $out = [];
+        foreach (preg_split('/\r?\n/', trim($raw)) as $line) {
+            $p = explode("\t", $line, 2);
+            if (count($p) === 2) {
+                $out[] = trim($p[0]).' '.trim($p[1]);
+            }
+        }
+
+        return implode("\n", $out);
+    }
+
+    /**
+     * Parsea una tabla separada por tabuladores (salida de mysql -B).
+     *
+     * @param  array<int, string>  $cols
+     * @return array<int, array<string, string>>
+     */
+    private function parsePipeTable(string $raw, array $cols): array
+    {
+        $rows = [];
+        foreach (preg_split('/\r?\n/', trim($raw)) as $line) {
+            if (trim($line) === '') {
+                continue;
+            }
+            $parts = explode("\t", $line);
+            if (count($parts) < count($cols)) {
+                continue;
+            }
+            $row = [];
+            foreach ($cols as $i => $c) {
+                $row[$c] = $parts[$i] ?? '';
+            }
+            $rows[] = $row;
+        }
+
+        return $rows;
     }
 
     /** @return array<string, string> */

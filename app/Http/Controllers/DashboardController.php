@@ -79,6 +79,26 @@ class DashboardController extends Controller
         return view('dashboard.show', array_merge(['server' => $server], $data));
     }
 
+    /** Reporte analítico integral: CPU, RAM, ancho de banda y MySQL. */
+    public function analytics(Server $server)
+    {
+        $data = ['server' => $server, 'report' => null, 'error' => null];
+
+        if (! $server->hasCredentials()) {
+            $data['error'] = 'Este servidor aún no tiene credenciales configuradas.';
+
+            return view('dashboard.analytics', $data);
+        }
+
+        try {
+            $data['report'] = $this->monitor->analytics($server);
+        } catch (\Throwable $e) {
+            $data['error'] = $e->getMessage();
+        }
+
+        return view('dashboard.analytics', $data);
+    }
+
     /** Endpoint JSON para refrescar solo las métricas (auto-refresh). */
     public function metrics(Server $server)
     {

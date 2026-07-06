@@ -29,6 +29,7 @@ Route::middleware('dashboard.auth')->prefix('panel')->name('dashboard.')->group(
 
     // Observabilidad por dominio (Fase 1)
     Route::get('/servidores/{server}/dominio', [DomainController::class, 'show'])->name('servers.domain');
+    Route::get('/servidores/{server}/analisis', [DashboardController::class, 'analytics'])->name('servers.analytics');
 
     // Administración de dominios (registradores y vencimientos)
     Route::get('/dominios', [DomainAdminController::class, 'index'])->name('domains');
