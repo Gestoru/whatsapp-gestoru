@@ -1,0 +1,57 @@
+# ──────────────────────────────────────────────────────────────────────────
+#  WordPress AISLADO para gestordesalud.co
+#  Proyecto Docker independiente: red, volúmenes y base de datos propios.
+#  NO toca ningún otro contenedor, base de datos o proxy del servidor.
+#  Solo publica WordPress en 127.0.0.1:${WP_PORT} (local), para que el
+#  proxy existente lo enrute; no ocupa 80/443 directamente.
+# ──────────────────────────────────────────────────────────────────────────
+
+services:
+  gestordesalud-db:
+    image: mariadb:11
+    container_name: gestordesalud-db
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: ${DB_NAME}
+      MARIADB_USER: ${DB_USER}
+      MARIADB_PASSWORD: ${DB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    volumes:
+      - gestordesalud_db:/var/lib/mysql
+    networks:
+      - gestordesalud
+
+  gestordesalud-wp:
+    image: wordpress:php8.2-apache
+    container_name: gestordesalud-wp
+    restart: unless-stopped
+    depends_on:
+      - gestordesalud-db
+    environment:
+      WORDPRESS_DB_HOST: gestordesalud-db
+      WORDPRESS_DB_NAME: ${DB_NAME}
+      WORDPRESS_DB_USER: ${DB_USER}
+      WORDPRESS_DB_PASSWORD: ${DB_PASSWORD}
+      # Límites amplios para importar sitios grandes con Migrate Guru / AIO
+      WORDPRESS_CONFIG_EXTRA: |
+        @ini_set('upload_max_filesize', '1024M');
+        @ini_set('post_max_size', '1024M');
+        @ini_set('memory_limit', '512M');
+        @ini_set('max_execution_time', '600');
+    volumes:
+      - gestordesalud_wp:/var/www/html
+    ports:
+      # Solo accesible localmente; el proxy del servidor lo enruta al dominio.
+      - "127.0.0.1:${WP_PORT}:80"
+    networks:
+      - gestordesalud
+
+networks:
+  gestordesalud:
+    name: gestordesalud
+
+volumes:
+  gestordesalud_db:
+    name: gestordesalud_db
+  gestordesalud_wp:
+    name: gestordesalud_wp
