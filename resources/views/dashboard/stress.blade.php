@@ -85,6 +85,9 @@
                 <div style="font-size:16px;font-weight:700;color:{{ $tone[2] }}">
                     {{ ['ok'=>'✅','warn'=>'⚠️','bad'=>'🔴'][$v['level']] }} {{ $v['text'] }}
                 </div>
+                @if(!empty($result['client']))
+                    <div class="tiny muted" style="margin-top:6px">Probado internamente contra el servidor (localhost) con {{ $result['client'] }}, usando el dominio {{ parse_url($result['url'], PHP_URL_HOST) }}.</div>
+                @endif
             </div>
 
             <div class="stat-grid" style="margin-bottom:14px">

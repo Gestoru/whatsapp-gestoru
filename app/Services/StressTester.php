@@ -70,22 +70,44 @@ class StressTester
     {
         $seconds     = max(3, min(self::MAX_SECONDS, $seconds));
         $concurrency = max(1, min(self::MAX_CONCURRENCY, $concurrency));
-        $u           = escapeshellarg($url);
 
+        $parts  = parse_url($url);
+        $scheme = $parts['scheme'] ?? 'https';
+        $host   = $parts['host'] ?? '';
+        $port   = $parts['port'] ?? ($scheme === 'http' ? 80 : 443);
+
+        $u = escapeshellarg($url);
+        $h = escapeshellarg($host);
+        $p = (int) $port;
+
+        // Probamos contra localhost forzando la resolución del dominio
+        // (--resolve): evita el NAT del propio servidor y el firewall externo,
+        // y prueba directamente la app/servidor con el vhost correcto.
         $script = <<<SH
-URL={$u}; SECS={$seconds}; CONC={$concurrency}
+URL={$u}; HOST={$h}; PORT={$p}; SECS={$seconds}; CONC={$concurrency}
+CLIENT=""
+command -v curl >/dev/null 2>&1 && CLIENT="curl"
+[ -z "\$CLIENT" ] && command -v wget >/dev/null 2>&1 && CLIENT="wget"
+echo "CLIENT=\$CLIENT"
+if [ -z "\$CLIENT" ]; then echo "==STATS=="; exit 0; fi
+
 TMP=\$(mktemp -d)
-# CPU antes
 read -r _ a b c d e f g _ < /proc/stat 2>/dev/null; t1=\$((a+b+c+d+e+f+g)); i1=\$((d+e))
 END=\$(( \$(date +%s) + SECS ))
-worker(){
-  while [ \$(date +%s) -lt \$END ]; do
-    curl -k -o /dev/null -s -w '%{http_code} %{time_total}\n' --max-time 15 "\$URL" >> "\$TMP/out" 2>/dev/null
-  done
-}
+
+if [ "\$CLIENT" = "curl" ]; then
+  worker(){ while [ \$(date +%s) -lt \$END ]; do
+    curl -k -o /dev/null -s --resolve "\$HOST:\$PORT:127.0.0.1" -w '%{http_code} %{time_total}\n' --max-time 15 "\$URL" >> "\$TMP/out" 2>/dev/null
+  done; }
+else
+  worker(){ while [ \$(date +%s) -lt \$END ]; do
+    if wget -q -O /dev/null --no-check-certificate --timeout=15 "\$URL" 2>/dev/null; then echo "200 0" >> "\$TMP/out"; else echo "000 0" >> "\$TMP/out"; fi
+  done; }
+fi
+
 i=0; while [ \$i -lt \$CONC ]; do worker & i=\$((i+1)); done
 wait
-# CPU después
+
 read -r _ a b c d e f g _ < /proc/stat 2>/dev/null; t2=\$((a+b+c+d+e+f+g)); i2=\$((d+e))
 dt=\$((t2-t1)); di=\$((i2-i1))
 [ "\$dt" -gt 0 ] && echo "CPU=\$(( (100*(dt-di))/dt ))" || echo "CPU="
@@ -113,10 +135,13 @@ SH;
         $avg    = 0;
         $max    = 0;
         $codes  = [];
+        $client = null;
 
         foreach ($lines as $line) {
             $line = trim($line);
-            if (str_starts_with($line, 'CPU=')) {
+            if (str_starts_with($line, 'CLIENT=')) {
+                $client = substr($line, 7) ?: null;
+            } elseif (str_starts_with($line, 'CPU=')) {
                 $v = substr($line, 4);
                 $cpu = $v === '' ? null : (int) $v;
             } elseif (str_starts_with($line, 'total=')) {
@@ -159,15 +184,19 @@ SH;
             'ok'           => $ok,
             'errors'       => $errs,
             'error_pct'    => $errorPct,
-            'verdict'      => $this->verdict($total, $errorPct, $avg),
+            'client'       => $client,
+            'verdict'      => $this->verdict($total, $errorPct, $avg, $client),
         ];
     }
 
     /** Diagnóstico legible del resultado. */
-    private function verdict(int $total, float $errorPct, int $avgMs): array
+    private function verdict(int $total, float $errorPct, int $avgMs, ?string $client): array
     {
+        if (! $client) {
+            return ['level' => 'bad', 'text' => 'El servidor no tiene curl ni wget instalados para generar la carga. Instala uno con: apt-get install -y curl'];
+        }
         if ($total === 0) {
-            return ['level' => 'bad', 'text' => 'No se completó ninguna petición. El sitio no respondió o el objetivo no es alcanzable desde el servidor.'];
+            return ['level' => 'bad', 'text' => 'No se completó ninguna petición. El sitio no respondió en el propio servidor (¿el servicio está caído o escucha en otro puerto?).'];
         }
         if ($errorPct >= 20) {
             return ['level' => 'bad', 'text' => 'Muchos errores bajo carga ('.$errorPct.'%). El sitio se degrada o cae al recibir tráfico — hay que revisarlo.'];
