@@ -61,6 +61,8 @@ Route::middleware('dashboard.auth')->prefix('panel')->name('dashboard.')->group(
     Route::post('/dominios/godaddy/conectar', [DomainAdminController::class, 'connectGoDaddy'])->name('domains.godaddy.connect');
     Route::post('/dominios/godaddy/sincronizar', [DomainAdminController::class, 'syncGoDaddy'])->name('domains.godaddy.sync');
     Route::post('/dominios/{domain}/whois', [DomainAdminController::class, 'whois'])->name('domains.whois');
+    Route::post('/dominios/{domain}/archivar', [DomainAdminController::class, 'deactivate'])->name('domains.deactivate');
+    Route::post('/dominios/{domain}/reactivar', [DomainAdminController::class, 'reactivate'])->name('domains.reactivate');
     Route::get('/dominios/{domain}/editar', [DomainAdminController::class, 'edit'])->name('domains.edit');
     Route::put('/dominios/{domain}', [DomainAdminController::class, 'update'])->name('domains.update');
     Route::delete('/dominios/{domain}', [DomainAdminController::class, 'destroy'])->name('domains.destroy');

@@ -8,7 +8,7 @@ class Domain extends Model
 {
     protected $fillable = [
         'name', 'registrar', 'expires_at', 'renewal_url', 'notes', 'source', 'whois_checked_at',
-        'status', 'auto_renew', 'synced_at',
+        'status', 'auto_renew', 'synced_at', 'is_active',
     ];
 
     protected function casts(): array
@@ -18,7 +18,20 @@ class Domain extends Model
             'whois_checked_at' => 'datetime',
             'synced_at'        => 'datetime',
             'auto_renew'       => 'boolean',
+            'is_active'        => 'boolean',
         ];
+    }
+
+    /**
+     * ¿Se puede archivar (inactivar)? Solo si está vencido o cancelado.
+     */
+    public function canBeDeactivated(): bool
+    {
+        $days   = $this->daysLeft();
+        $status = strtoupper((string) $this->status);
+
+        return ($days !== null && $days < 0)
+            || in_array($status, ['EXPIRED', 'CANCELLED', 'CANCELED', 'SUSPENDED'], true);
     }
 
     /** Etiqueta legible del estado del dominio. */

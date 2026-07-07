@@ -41,6 +41,7 @@
         .card.link:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:0 10px 30px rgba(0,0,0,.3)}
         .muted{color:var(--muted)}
         .tiny{font-size:12px}
+        .hidden{display:none}
         .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;
             font-size:12px;font-weight:600;border:1px solid var(--line);background:#0e1630}
         .dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}

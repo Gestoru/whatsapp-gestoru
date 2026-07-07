@@ -64,6 +64,7 @@
         <div class="stat filt" data-filter="due" style="cursor:pointer;border-color:#5b2330"><div class="k">Por vencer (≤10 días)</div><div class="v" style="color:#fca5a5">{{ $stats['due'] }}</div></div>
         <div class="stat filt" data-filter="warn" style="cursor:pointer;border-color:#6b5316"><div class="k">Próximos (≤30 días)</div><div class="v" style="color:#fcd34d">{{ $stats['warn'] }}</div></div>
         <div class="stat filt" data-filter="unknown" style="cursor:pointer"><div class="k">Sin fecha</div><div class="v muted">{{ $stats['unknown'] }}</div></div>
+        <div class="stat filt" data-filter="inactive" style="cursor:pointer"><div class="k">Inactivos (archivados)</div><div class="v muted">{{ $stats['inactive'] }}</div></div>
     </div>
     <div id="filter-note" class="tiny muted hidden" style="margin:-8px 0 12px">
         Mostrando solo: <strong id="filter-label"></strong> · <a href="#" id="filter-clear" style="color:var(--accent)">ver todos</a>
@@ -108,7 +109,7 @@
                     @php($tone = ['due'=>'#fca5a5','warn'=>'#fcd34d','ok'=>'#86efac','unknown'=>'var(--muted)'][$lvl])
                     @php($stTone = ['ok'=>'#86efac','warn'=>'#fcd34d','bad'=>'#fca5a5','muted'=>'var(--muted)'][$domain->statusTone()])
                     @php($subs = $grouped[$domain->name] ?? [])
-                    <tr class="dom-row" data-level="{{ $lvl }}" @if(count($subs)) data-toggle="{{ $domain->id }}" style="cursor:pointer" @endif>
+                    <tr class="dom-row" data-level="{{ $lvl }}" data-active="{{ $domain->is_active ? 1 : 0 }}" @if(count($subs)) data-toggle="{{ $domain->id }}" style="cursor:pointer" @endif>
                         <td style="font-weight:700">
                             @if(count($subs))
                                 <span class="chev" id="chev-{{ $domain->id }}" style="display:inline-block;width:12px;color:var(--muted);transition:transform .2s">▸</span>
@@ -154,11 +155,23 @@
                             @if(in_array($lvl,['due','warn']) && $domain->renewalLink())
                                 <a href="{{ $domain->renewalLink() }}" target="_blank" rel="noopener" class="btn btn-primary btn-sm">💳 Renovar</a>
                             @endif
+                            @if(! $domain->is_active)
+                                <form method="POST" action="{{ route('dashboard.domains.reactivate', $domain) }}" style="display:inline">
+                                    @csrf
+                                    <button class="btn btn-ghost btn-sm" title="Volver a administrar este dominio">♻️ Reactivar</button>
+                                </form>
+                            @elseif($domain->canBeDeactivated())
+                                <form method="POST" action="{{ route('dashboard.domains.deactivate', $domain) }}" style="display:inline"
+                                      onsubmit="return confirm('Archivar «{{ $domain->name }}»? Saldrá de la vista principal y quedará en el filtro «Inactivos». Podrás reactivarlo cuando quieras.')">
+                                    @csrf
+                                    <button class="btn btn-ghost btn-sm" title="Archivar (vencido/cancelado)">🗄️ Archivar</button>
+                                </form>
+                            @endif
                             <a href="{{ route('dashboard.domains.edit', $domain) }}" class="btn btn-ghost btn-sm">✏️</a>
                         </td>
                     </tr>
                     @if(count($subs))
-                        <tr id="subs-{{ $domain->id }}" class="sub-row hidden" data-parent="{{ $domain->id }}" data-level="{{ $lvl }}">
+                        <tr id="subs-{{ $domain->id }}" class="sub-row hidden" data-parent="{{ $domain->id }}" data-level="{{ $lvl }}" data-active="{{ $domain->is_active ? 1 : 0 }}">
                             <td colspan="8" style="background:#0e1630">
                                 <div style="padding:4px 6px">
                                     @foreach($subs as $h)
@@ -205,15 +218,20 @@ document.querySelectorAll('.dom-row[data-toggle]').forEach(row => {
     });
 });
 
-// ── Filtro por estado de vencimiento ──
-const labels = {all:'todos', due:'por vencer (≤10 días)', warn:'próximos (≤30 días)', unknown:'sin fecha'};
+// ── Filtro por estado de vencimiento / archivado ──
+const labels = {all:'activos', due:'por vencer (≤10 días)', warn:'próximos (≤30 días)', unknown:'sin fecha', inactive:'inactivos (archivados)'};
+// Un dominio se muestra si pasa el filtro. Por defecto (cualquier filtro que
+// no sea "inactive") solo se ven los ACTIVOS; "inactive" muestra los archivados.
+function rowVisible(r, f){
+    const active = r.dataset.active === '1';
+    if (f === 'inactive') return !active;
+    if (!active) return false;                 // los archivados no salen salvo en "inactive"
+    if (f === 'all') return true;
+    return r.dataset.level === f;
+}
 function applyFilter(f){
-    document.querySelectorAll('.dom-row').forEach(r => {
-        r.classList.toggle('filt-hide', f !== 'all' && r.dataset.level !== f);
-    });
-    document.querySelectorAll('.sub-row').forEach(r => {
-        r.classList.toggle('filt-hide', f !== 'all' && r.dataset.level !== f);
-    });
+    document.querySelectorAll('.dom-row').forEach(r => r.classList.toggle('filt-hide', !rowVisible(r, f)));
+    document.querySelectorAll('.sub-row').forEach(r => r.classList.toggle('filt-hide', !rowVisible(r, f)));
     document.querySelectorAll('.stat.filt').forEach(s => s.classList.toggle('active', s.dataset.filter === f && f !== 'all'));
     const note = document.getElementById('filter-note');
     if (f === 'all') { note.classList.add('hidden'); }
@@ -223,5 +241,7 @@ document.querySelectorAll('.stat.filt').forEach(s => {
     s.addEventListener('click', () => applyFilter(s.dataset.filter));
 });
 document.getElementById('filter-clear')?.addEventListener('click', e => { e.preventDefault(); applyFilter('all'); });
+// Al cargar: ocultar los archivados (mostrar solo activos)
+applyFilter('all');
 </script>
 @endpush

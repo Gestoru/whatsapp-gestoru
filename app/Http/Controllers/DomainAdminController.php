@@ -61,11 +61,14 @@ class DomainAdminController extends Controller
             }
         }
 
+        // Las métricas de vencimiento se calculan sobre los dominios activos
+        $active = $domains->filter(fn ($d) => $d->is_active);
         $stats = [
-            'total'    => $domains->count(),
-            'due'      => $domains->filter(fn ($d) => $d->expiryLevel() === 'due')->count(),
-            'warn'     => $domains->filter(fn ($d) => $d->expiryLevel() === 'warn')->count(),
-            'unknown'  => $domains->filter(fn ($d) => $d->expiryLevel() === 'unknown')->count(),
+            'total'    => $active->count(),
+            'due'      => $active->filter(fn ($d) => $d->expiryLevel() === 'due')->count(),
+            'warn'     => $active->filter(fn ($d) => $d->expiryLevel() === 'warn')->count(),
+            'unknown'  => $active->filter(fn ($d) => $d->expiryLevel() === 'unknown')->count(),
+            'inactive' => $domains->filter(fn ($d) => ! $d->is_active)->count(),
         ];
 
         return view('dashboard.domains', [
@@ -168,6 +171,27 @@ class DomainAdminController extends Controller
         $domain->delete();
 
         return redirect()->route('dashboard.domains')->with('status', 'Dominio eliminado del panel.');
+    }
+
+    /** Archiva (inactiva) un dominio — solo si está vencido o cancelado. */
+    public function deactivate(Domain $domain)
+    {
+        if (! $domain->canBeDeactivated()) {
+            return redirect()->route('dashboard.domains')
+                ->with('error', "«{$domain->name}» está vigente; solo puedes archivar dominios vencidos o cancelados.");
+        }
+
+        $domain->update(['is_active' => false]);
+
+        return redirect()->route('dashboard.domains')->with('status', "«{$domain->name}» archivado. Lo ves en el filtro «Inactivos».");
+    }
+
+    /** Reactiva un dominio archivado. */
+    public function reactivate(Domain $domain)
+    {
+        $domain->update(['is_active' => true]);
+
+        return redirect()->route('dashboard.domains')->with('status', "«{$domain->name}» reactivado.");
     }
 
     private function validated(Request $request, ?Domain $domain = null): array
