@@ -43,7 +43,38 @@
 
     @if($total === 0)
         <div class="card empty"><div class="big">🌙</div><h1>Nadie conectado ahora mismo</h1>
-            <p class="muted" style="margin-top:8px">No hay clientes externos con actividad web en el último minuto. Esta vista se actualiza sola.</p></div>
+            <p class="muted" style="margin-top:8px">No se detectaron clientes externos con actividad web en el último minuto. Esta vista se actualiza sola.</p></div>
+        @if($diag)
+            @php($noSockets = ($diag['ss_count'] ?? 0) === 0 && ($diag['ct_count'] ?? 0) === 0)
+            <div class="card" style="margin-top:14px;padding:14px 16px">
+                <div class="row" style="justify-content:space-between;cursor:pointer" onclick="document.getElementById('diag').classList.toggle('hidden')">
+                    <span style="font-weight:600">🔧 Diagnóstico de la medición</span>
+                    <span class="muted tiny">detalles ▾</span>
+                </div>
+                <div id="diag" class="hidden" style="margin-top:12px">
+                    <div class="stat-grid">
+                        <div class="stat"><div class="k">ss (sockets host)</div><div class="v" style="font-size:17px">{{ $diag['ss_count'] }}</div></div>
+                        <div class="stat"><div class="k">conntrack (NAT/Docker)</div><div class="v" style="font-size:17px">{{ $diag['ct_count'] }}</div></div>
+                        <div class="stat"><div class="k">Flujos conntrack totales</div><div class="v" style="font-size:17px">{{ $diag['ct_lines'] }}</div></div>
+                        <div class="stat"><div class="k">Docker presente</div><div class="v" style="font-size:15px">{{ $diag['docker'] ? 'sí' : 'no' }}</div></div>
+                    </div>
+                    @if(! $diag['ct_file'] && ! $diag['ct_bin'])
+                        <div class="alert" style="margin:12px 0 0;background:#2e2410;border-color:#6b5316;color:#fcd34d">
+                            ⚠️ No se puede leer la tabla <code>conntrack</code> del kernel (ni el archivo <code>/proc/net/nf_conntrack</code> ni el binario <code>conntrack</code>).
+                            @if($diag['docker'])
+                                Como este servidor usa <strong>Docker con NAT</strong>, las conexiones a los contenedores no se ven sin conntrack. El instalador ya intenta añadir <code>conntrack</code>; si persiste, en el servidor: <code>sudo apt-get install -y conntrack</code>.
+                            @endif
+                        </div>
+                    @elseif($diag['ct_lines'] === 0 && $diag['docker'])
+                        <div class="alert" style="margin:12px 0 0;background:#101a33;border-color:var(--line);color:var(--muted)">
+                            La tabla conntrack está vacía o el módulo del kernel no está activo. Prueba en el servidor: <code>sudo modprobe nf_conntrack</code>.
+                        </div>
+                    @else
+                        <p class="muted tiny" style="margin:12px 0 0">Las fuentes responden pero no hubo tráfico web externo en la ventana de medición. Si esperabas visitas, refresca en unos segundos.</p>
+                    @endif
+                </div>
+            </div>
+        @endif
     @else
     <div class="fb" style="grid-template-columns:1.3fr 1fr;align-items:start;margin-bottom:18px">
         {{-- Mapa aproximado por coordenadas --}}

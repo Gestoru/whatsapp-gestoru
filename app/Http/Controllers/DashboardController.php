@@ -106,17 +106,21 @@ class DashboardController extends Controller
     public function liveVisitors(Server $server, \App\Services\GeoLocator $geo)
     {
         $base = ['server' => $server, 'needsCredentials' => ! $server->hasCredentials(),
-                 'error' => null, 'visitors' => [], 'countries' => [], 'total' => 0, 'connections' => 0];
+                 'error' => null, 'visitors' => [], 'countries' => [], 'total' => 0,
+                 'connections' => 0, 'localCount' => 0, 'diag' => null];
 
         if ($base['needsCredentials']) {
             return view('dashboard.live', $base);
         }
 
         try {
-            $conns = $this->monitor->liveVisitors($server);
+            $result = $this->monitor->liveVisitors($server);
         } catch (\Throwable $e) {
             return view('dashboard.live', array_merge($base, ['error' => $e->getMessage()]));
         }
+
+        $conns = $result['visitors'];
+        $base['diag'] = $result['diag'];
 
         $geos = $geo->locate(array_column($conns, 'ip'));
 

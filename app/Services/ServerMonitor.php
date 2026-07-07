@@ -79,29 +79,55 @@ class ServerMonitor
      * incluyendo conexiones recién cerradas (time-wait ≈ último minuto), con
      * su número de conexiones. Es la base del panel «Usuarios en vivo».
      *
-     * @return array<int, array{ip: string, conns: int}>
+     * @return array{visitors: array<int, array{ip: string, conns: int}>, diag: array<string, mixed>}
      */
     public function liveVisitors(Server $server): array
     {
-        // ss (sockets del host) + conntrack (flujos NAT hacia Docker que ss no
-        // ve). Dedup por ip:puerto; excluye IPs privadas y las del servidor.
+        // Dos fuentes: ss (sockets del host) y conntrack (flujos NAT hacia
+        // contenedores Docker que ss no ve). Cada una filtra IPs privadas y las
+        // del propio servidor. Se emite además un bloque de diagnóstico.
         $script = <<<'SH'
 LIPS=$(hostname -I 2>/dev/null)
-{
-ss -tan state established state time-wait 2>/dev/null | awk 'NR>1{loc=$(NF-1); if(loc ~ /:(80|443)$/){ip=$NF; sub(/:[0-9]+$/,"",ip); gsub(/[][]/,"",ip); p=$NF; sub(/^.*:/,"",p); print ip" "p}}'
-(cat /proc/net/nf_conntrack 2>/dev/null || conntrack -L -p tcp 2>/dev/null) | awk '/ESTABLISHED|TIME_WAIT/{o="";d="";s="";for(i=1;i<=NF;i++){if(o==""&&$i~/^src=/)o=substr($i,5);if(d==""&&$i~/^dport=/)d=substr($i,7);if(s==""&&$i~/^sport=/)s=substr($i,7)};if((d=="80"||d=="443")&&o!="")print o" "s}'
-} | sort -u | awk -v L="$LIPS" 'BEGIN{n=split(L,A," ");for(i=1;i<=n;i++)loc[A[i]]=1}{ip=$1; if(ip=="") next; if(ip in loc) next; if(ip ~ /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)/) next; if(ip ~ /^(::1|::ffff:127|fe80|fd)/) next; c[ip]++} END{for(ip in c) print c[ip]" "ip}' | sort -rn | head -300
+echo "==SS=="
+ss -tan state established state time-wait 2>/dev/null | awk 'NR>1{loc=$(NF-1); if(loc ~ /:(80|443)$/){ip=$NF; sub(/:[0-9]+$/,"",ip); gsub(/[][]/,"",ip); print ip}}' | awk -v L="$LIPS" 'BEGIN{n=split(L,A," ");for(i=1;i<=n;i++)loc[A[i]]=1}{ip=$1; if(ip=="")next; if(ip in loc)next; if(ip ~ /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)/)next; if(ip ~ /^(::1|::ffff:127|fe80|fd)/)next; print ip}'
+echo "==CT=="
+(cat /proc/net/nf_conntrack 2>/dev/null || cat /proc/net/ip_conntrack 2>/dev/null || conntrack -L -p tcp 2>/dev/null) | awk '/ESTABLISHED|TIME_WAIT/{o="";d="";for(i=1;i<=NF;i++){if(o==""&&$i~/^src=/)o=substr($i,5);if(d==""&&$i~/^dport=/)d=substr($i,7)};if((d=="80"||d=="443")&&o!="")print o}' | awk -v L="$LIPS" 'BEGIN{n=split(L,A," ");for(i=1;i<=n;i++)loc[A[i]]=1}{ip=$1; if(ip=="")next; if(ip in loc)next; if(ip ~ /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)/)next; if(ip ~ /^(::1|::ffff:127|fe80|fd)/)next; print ip}'
+echo "==DIAG=="
+echo "ct_file=$([ -r /proc/net/nf_conntrack ] && echo 1 || echo 0)"
+echo "ct_bin=$(command -v conntrack >/dev/null 2>&1 && echo 1 || echo 0)"
+echo "docker=$(command -v docker >/dev/null 2>&1 && echo 1 || echo 0)"
+echo "ct_lines=$( { cat /proc/net/nf_conntrack 2>/dev/null || conntrack -L -p tcp 2>/dev/null; } | grep -c . )"
 SH;
         $raw = $this->cachedRun($server, 'livevisitors', 10, $script);
+        $sec = $this->splitSections($raw);
 
-        $out = [];
-        foreach ($this->nonEmptyLines($raw) as $line) {
-            if (preg_match('/^\s*(\d+)\s+(\S+)$/', $line, $m)) {
-                $out[] = ['ip' => $m[2], 'conns' => (int) $m[1]];
+        $counts = [];
+        foreach (array_merge($this->nonEmptyLines($sec['SS'] ?? ''), $this->nonEmptyLines($sec['CT'] ?? '')) as $ip) {
+            $ip = trim($ip);
+            if ($ip !== '') {
+                $counts[$ip] = ($counts[$ip] ?? 0) + 1;
             }
         }
+        arsort($counts);
 
-        return $out;
+        $visitors = [];
+        foreach (array_slice($counts, 0, 300, true) as $ip => $conns) {
+            $visitors[] = ['ip' => $ip, 'conns' => $conns];
+        }
+
+        $d = $this->parseKeyValues($sec['DIAG'] ?? '');
+
+        return [
+            'visitors' => $visitors,
+            'diag' => [
+                'ct_file'  => ($d['ct_file'] ?? '0') === '1',
+                'ct_bin'   => ($d['ct_bin'] ?? '0') === '1',
+                'docker'   => ($d['docker'] ?? '0') === '1',
+                'ct_lines' => (int) ($d['ct_lines'] ?? 0),
+                'ss_count' => count($this->nonEmptyLines($sec['SS'] ?? '')),
+                'ct_count' => count($this->nonEmptyLines($sec['CT'] ?? '')),
+            ],
+        ];
     }
 
     /**
@@ -955,7 +981,7 @@ df -P -B1 / 2>/dev/null | awk 'NR==2{print "DISK_TOTAL="$2"\nDISK_USED="$3}'
 LIPS=$(hostname -I 2>/dev/null)
 WPAIRS=$({
 ss -tan state established state time-wait 2>/dev/null | awk 'NR>1{loc=$(NF-1); if(loc ~ /:(80|443)$/){ip=$NF; sub(/:[0-9]+$/,"",ip); gsub(/[][]/,"",ip); p=$NF; sub(/^.*:/,"",p); print ip" "p}}'
-(cat /proc/net/nf_conntrack 2>/dev/null || conntrack -L -p tcp 2>/dev/null) | awk '/ESTABLISHED|TIME_WAIT/{o="";d="";s="";for(i=1;i<=NF;i++){if(o==""&&$i~/^src=/)o=substr($i,5);if(d==""&&$i~/^dport=/)d=substr($i,7);if(s==""&&$i~/^sport=/)s=substr($i,7)};if((d=="80"||d=="443")&&o!="")print o" "s}'
+(cat /proc/net/nf_conntrack 2>/dev/null || cat /proc/net/ip_conntrack 2>/dev/null || conntrack -L -p tcp 2>/dev/null) | awk '/ESTABLISHED|TIME_WAIT/{o="";d="";s="";for(i=1;i<=NF;i++){if(o==""&&$i~/^src=/)o=substr($i,5);if(d==""&&$i~/^dport=/)d=substr($i,7);if(s==""&&$i~/^sport=/)s=substr($i,7)};if((d=="80"||d=="443")&&o!="")print o" "s}'
 } | sort -u | awk -v L="$LIPS" 'BEGIN{n=split(L,A," ");for(i=1;i<=n;i++)loc[A[i]]=1}{ip=$1; if(ip=="") next; if(ip in loc) next; if(ip ~ /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)/) next; if(ip ~ /^(::1|::ffff:127|fe80|fd)/) next; print}')
 echo "WEB_CONNS=$(printf '%s\n' "$WPAIRS" | grep -c .)"
 echo "WEB_USERS=$(printf '%s\n' "$WPAIRS" | awk '{print $1}' | sort -u | grep -c .)"

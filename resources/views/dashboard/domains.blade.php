@@ -38,6 +38,15 @@
         Mostrando solo: <strong id="filter-label"></strong> · <a href="#" id="filter-clear" style="color:var(--accent)">ver todos</a>
     </div>
 
+    {{-- Buscador --}}
+    <div class="row" style="margin:0 0 14px;gap:12px">
+        <div style="position:relative;flex:1;max-width:440px">
+            <span style="position:absolute;left:13px;top:50%;transform:translateY(-50%);opacity:.55">🔍</span>
+            <input id="dom-search" placeholder="Buscar dominio, subdominio o registrador…" autocomplete="off" style="padding-left:38px">
+        </div>
+        <span id="search-count" class="muted tiny"></span>
+    </div>
+
     {{-- Alta rápida --}}
     <div id="add-domain" class="card hidden" style="margin-bottom:16px">
         <form method="POST" action="{{ route('dashboard.domains.store') }}">
@@ -77,7 +86,9 @@
                     @php($tone = ['due'=>'#fca5a5','warn'=>'#fcd34d','ok'=>'#86efac','unknown'=>'var(--muted)'][$lvl])
                     @php($stTone = ['ok'=>'#86efac','warn'=>'#fcd34d','bad'=>'#fca5a5','muted'=>'var(--muted)'][$domain->statusTone()])
                     @php($subs = $grouped[$domain->name] ?? [])
-                    <tr class="dom-row" data-level="{{ $lvl }}" data-active="{{ $domain->is_active ? 1 : 0 }}" @if(count($subs)) data-toggle="{{ $domain->id }}" style="cursor:pointer" @endif>
+                    <tr class="dom-row" data-level="{{ $lvl }}" data-active="{{ $domain->is_active ? 1 : 0 }}"
+                        data-search="{{ strtolower($domain->name.' '.$domain->registrar.' '.collect($subs)->pluck('hostname')->implode(' ')) }}"
+                        @if(count($subs)) data-toggle="{{ $domain->id }}" style="cursor:pointer" @endif>
                         <td style="font-weight:700">
                             @if(count($subs))
                                 <span class="chev" id="chev-{{ $domain->id }}" style="display:inline-block;width:12px;color:var(--muted);transition:transform .2s">▸</span>
@@ -186,8 +197,13 @@ document.querySelectorAll('.dom-row[data-toggle]').forEach(row => {
     });
 });
 
-// ── Filtro por estado de vencimiento / archivado ──
+// ── Filtro por estado + buscador ──
 const labels = {all:'activos', due:'por vencer (≤10 días)', warn:'próximos (≤30 días)', unknown:'sin fecha', inactive:'inactivos (archivados)'};
+let currentFilter = 'all';
+let q = '';
+const searchInput = document.getElementById('dom-search');
+const searchCount = document.getElementById('search-count');
+
 // Un dominio se muestra si pasa el filtro. Por defecto (cualquier filtro que
 // no sea "inactive") solo se ven los ACTIVOS; "inactive" muestra los archivados.
 function rowVisible(r, f){
@@ -197,19 +213,42 @@ function rowVisible(r, f){
     if (f === 'all') return true;
     return r.dataset.level === f;
 }
-function applyFilter(f){
-    document.querySelectorAll('.dom-row').forEach(r => r.classList.toggle('filt-hide', !rowVisible(r, f)));
-    document.querySelectorAll('.sub-row').forEach(r => r.classList.toggle('filt-hide', !rowVisible(r, f)));
-    document.querySelectorAll('.stat.filt').forEach(s => s.classList.toggle('active', s.dataset.filter === f && f !== 'all'));
+
+function render(){
+    let shown = 0;
+    document.querySelectorAll('.dom-row').forEach(r => {
+        // En búsqueda: coincide por nombre/subdominio/registrador e ignora el
+        // filtro de estado (busca en todo). Sin búsqueda: filtro de estado.
+        const vis = q ? (r.dataset.search || '').includes(q) : rowVisible(r, currentFilter);
+        r.classList.toggle('filt-hide', !vis);
+        if (vis) shown++;
+
+        const id = r.dataset.toggle;
+        if (!id) return;
+        const sub = document.getElementById('subs-' + id);
+        const chev = document.getElementById('chev-' + id);
+        if (!sub) return;
+        if (q) {                                    // expandir subdominios de las coincidencias
+            sub.classList.toggle('filt-hide', !vis);
+            sub.classList.toggle('hidden', !vis);
+            if (chev) chev.style.transform = vis ? 'rotate(90deg)' : '';
+        } else {                                    // respetar filtro + estado de colapso
+            sub.classList.toggle('filt-hide', !rowVisible(sub, currentFilter));
+        }
+    });
+
+    document.querySelectorAll('.stat.filt').forEach(s =>
+        s.classList.toggle('active', !q && s.dataset.filter === currentFilter && currentFilter !== 'all'));
     const note = document.getElementById('filter-note');
-    if (f === 'all') { note.classList.add('hidden'); }
-    else { note.classList.remove('hidden'); document.getElementById('filter-label').textContent = labels[f] || f; }
+    if (q || currentFilter === 'all') { note.classList.add('hidden'); }
+    else { note.classList.remove('hidden'); document.getElementById('filter-label').textContent = labels[currentFilter] || currentFilter; }
+    if (searchCount) searchCount.textContent = q ? (shown + ' resultado' + (shown === 1 ? '' : 's')) : '';
 }
-document.querySelectorAll('.stat.filt').forEach(s => {
-    s.addEventListener('click', () => applyFilter(s.dataset.filter));
-});
+
+function applyFilter(f){ currentFilter = f; if (searchInput) { searchInput.value = ''; q = ''; } render(); }
+document.querySelectorAll('.stat.filt').forEach(s => s.addEventListener('click', () => applyFilter(s.dataset.filter)));
 document.getElementById('filter-clear')?.addEventListener('click', e => { e.preventDefault(); applyFilter('all'); });
-// Al cargar: ocultar los archivados (mostrar solo activos)
-applyFilter('all');
+searchInput?.addEventListener('input', () => { q = searchInput.value.trim().toLowerCase(); render(); });
+render();
 </script>
 @endpush

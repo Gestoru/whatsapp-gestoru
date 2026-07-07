@@ -41,7 +41,7 @@ export DEBIAN_FRONTEND=noninteractive
 # ── 1. Conseguir un PHP utilizable ──────────────────────────────────────────
 log "Actualizando índices de paquetes (los errores de repositorios ajenos no detienen la instalación)…"
 apt-get update -qq 2>/dev/null || true
-apt-get install -y -qq unzip git rsync curl ca-certificates whois >/dev/null 2>&1 || true
+apt-get install -y -qq unzip git rsync curl ca-certificates whois conntrack >/dev/null 2>&1 || true
 
 # ¿El paquete tiene un candidato realmente descargable en los repos?
 avail() {
