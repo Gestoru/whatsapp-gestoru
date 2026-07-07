@@ -12,21 +12,22 @@
     $W = 1000; $H = 200; $padL = 4; $padR = 4; $padT = 12; $padB = 16;
     $n = $samples->count();
     $peakAt = $threshold ?? 50;
-    $build = function ($accessor) use ($samples, $n, $W, $H, $padL, $padR, $padT, $padB, $peakAt) {
-        if ($n === 0) return ['line' => '', 'area' => '', 'dots' => []];
+    $build = function ($accessor, $unit = '%') use ($samples, $n, $W, $H, $padL, $padR, $padT, $padB, $peakAt) {
+        if ($n === 0) return ['line' => '', 'area' => '', 'dots' => [], 'points' => []];
         $iW = $W - $padL - $padR; $iH = $H - $padT - $padB;
-        $pts = []; $dots = []; $i = 0;
+        $pts = []; $dots = []; $points = []; $i = 0;
         foreach ($samples as $s) {
-            $v = $accessor($s); $v = $v === null ? 0 : max(0, min(100, $v));
+            $raw = $accessor($s); $v = $raw === null ? 0 : max(0, min(100, $raw));
             $x = $padL + ($n <= 1 ? $iW/2 : $iW * $i/($n-1));
             $y = $padT + $iH * (1 - $v/100);
             $pts[] = round($x,1).','.round($y,1);
+            $points[] = [round($x,1), round($y,1), $s->sampled_at->format('d/m H:i').' · '.($raw === null ? 's/d' : $raw.$unit)];
             if ($v >= $peakAt) $dots[] = [round($x,1), round($y,1), $v];
             $i++;
         }
         $line = implode(' ', $pts);
         $f = explode(',', $pts[0]); $l = explode(',', $pts[count($pts)-1]); $b = $padT + $iH;
-        return ['line' => $line, 'area' => $f[0].','.$b.' '.$line.' '.$l[0].','.$b, 'dots' => $dots];
+        return ['line' => $line, 'area' => $f[0].','.$b.' '.$line.' '.$l[0].','.$b, 'dots' => $dots, 'points' => $points];
     };
     $charts = [
         ['cpu','CPU','#ff4d6d','🔥', fn($s)=>$s->cpu_pct],
@@ -141,6 +142,12 @@
                     @foreach($p['dots'] as [$dx,$dy,$dv])
                         <circle cx="{{ $dx }}" cy="{{ $dy }}" r="3.5" fill="#fff" stroke="{{ $color }}" stroke-width="2"/>
                     @endforeach
+                    {{-- Puntos invisibles con tooltip al pasar el mouse --}}
+                    @foreach($p['points'] as [$dx,$dy,$tip])
+                        <circle cx="{{ $dx }}" cy="{{ $dy }}" r="8" fill="transparent" style="cursor:pointer">
+                            <title>{{ $tip }}</title>
+                        </circle>
+                    @endforeach
                 </svg>
                 <div class="row" style="justify-content:space-between;margin-top:4px">
                     <span class="muted tiny">{{ $samples->first()->sampled_at->format('d/m H:i') }}</span>
@@ -166,6 +173,9 @@
                         </linearGradient></defs>
                         <polygon points="{{ $mc['area'] }}" fill="url(#mg-{{ $mc['key'] }})"/>
                         <polyline points="{{ $mc['line'] }}" fill="none" stroke="{{ $mc['color'] }}" stroke-width="2.5" stroke-linejoin="round" class="glow-line" style="color:{{ $mc['color'] }}"/>
+                        @foreach($mc['points'] as [$dx,$dy,$tip])
+                            <circle cx="{{ $dx }}" cy="{{ $dy }}" r="8" fill="transparent" style="cursor:pointer"><title>{{ $tip }}</title></circle>
+                        @endforeach
                     </svg>
                 </div>
             @endforeach

@@ -176,17 +176,20 @@ class DashboardController extends Controller
 
         $out = [];
         foreach ($defs as $def) {
-            $pts = []; $i = 0;
+            $pts = []; $points = []; $i = 0;
             foreach ($samples as $s) {
                 $v = (int) ($s->{$def['key']} ?? 0);
                 $x = $padL + ($n <= 1 ? $iW / 2 : $iW * $i / ($n - 1));
                 $y = $cPadT + $iH * (1 - min(1, $v / $def['max']));
-                $pts[] = round($x, 1).','.round($y, 1); $i++;
+                $pts[] = round($x, 1).','.round($y, 1);
+                $points[] = [round($x, 1), round($y, 1), $s->sampled_at->format('d/m H:i').' · '.$v];
+                $i++;
             }
             $line = implode(' ', $pts);
             $f = explode(',', $pts[0]); $l = explode(',', $pts[count($pts) - 1]); $b = $cPadT + $iH;
             $def['line'] = $line;
             $def['area'] = $f[0].','.$b.' '.$line.' '.$l[0].','.$b;
+            $def['points'] = $points;
             $out[] = $def;
         }
 

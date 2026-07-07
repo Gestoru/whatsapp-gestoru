@@ -115,6 +115,34 @@
                 </table>
             </div>
 
+            {{-- ── Plan de solución copiable ── --}}
+            @if(!empty($result['plan']))
+                <h2><span class="section-ic">🛠️</span> Plan de solución para el programador</h2>
+                <div class="card">
+                    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px">
+                        <span class="muted tiny">Reporte concreto con evidencia (URL, logs, consultas, procesos) y pasos para reparar/optimizar.</span>
+                        <button type="button" class="btn btn-primary btn-sm" id="copy-plan">📋 Copiar plan completo</button>
+                    </div>
+                    <textarea id="plan-text" readonly rows="18"
+                              style="width:100%;font-family:ui-monospace,'Cascadia Code',monospace;font-size:12px;line-height:1.5;background:#0b1226;white-space:pre;overflow:auto">{{ $result['plan'] }}</textarea>
+                    <div class="tiny muted" style="margin-top:8px">💡 Copia este texto y pégaselo a tu programador (o a un asistente de IA) — trae todo lo necesario para diagnosticar y reparar el problema.</div>
+                </div>
+
+                {{-- Evidencia detallada --}}
+                @php($d = $result['diagnostics'] ?? [])
+                @if(!empty($d['app_log']) || !empty($d['error_log']) || !empty($d['slow']))
+                    <h2><span class="section-ic">🔍</span> Evidencia capturada</h2>
+                    @foreach([['app_log','🧩 Log de la aplicación (contenedores del dominio)'],['error_log','📋 Errores del servidor web'],['slow','🐢 Consultas SQL lentas']] as [$k,$label])
+                        @if(!empty($d[$k]))
+                            <div class="list-card fb-file" style="margin-bottom:12px">
+                                <div class="fb-head">{{ $label }}</div>
+                                <pre style="max-height:240px">{{ implode("\n", $d[$k]) }}</pre>
+                            </div>
+                        @endif
+                    @endforeach
+                @endif
+            @endif
+
             <p class="muted tiny" style="margin-top:12px">💡 Mientras corre una prueba, abre <a href="{{ route('dashboard.servers.trends', $server) }}" style="color:var(--accent)">Tendencias en vivo</a> en otra pestaña para ver el CPU y la RAM reaccionar en tiempo real.</p>
         @endif
     @endif
@@ -158,6 +186,20 @@ search?.addEventListener('input', () => {
 document.querySelector('form')?.addEventListener('submit', () => {
     const b = document.getElementById('run-btn');
     if (b) { b.disabled = true; b.innerHTML = '<span class="spin"></span> Probando… (espera el resultado)'; }
+});
+
+// Copiar plan
+document.getElementById('copy-plan')?.addEventListener('click', async (e) => {
+    const ta = document.getElementById('plan-text');
+    const btn = e.currentTarget;
+    try {
+        await navigator.clipboard.writeText(ta.value);
+    } catch (_) {
+        ta.focus(); ta.select(); document.execCommand('copy');
+    }
+    const old = btn.textContent;
+    btn.textContent = '✅ ¡Copiado!';
+    setTimeout(() => { btn.textContent = old; }, 2000);
 });
 </script>
 @endpush

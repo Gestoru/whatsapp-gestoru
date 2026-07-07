@@ -121,9 +121,186 @@ awk '{c[\$1]++; n++; s+=\$2; if(\$2>mx)mx=\$2} END{
 rm -rf "\$TMP"
 SH;
 
-        $raw = $this->ssh->run($server, $script, $seconds + 25);
+        $raw    = $this->ssh->run($server, $script, $seconds + 25);
+        $result = $this->parse($raw, $seconds, $concurrency, $url);
 
-        return $this->parse($raw, $seconds, $concurrency, $url);
+        // Recoger evidencia del servidor tras la prueba y armar el plan
+        try {
+            $result['diagnostics'] = $this->gatherDiagnostics($server, $host);
+        } catch (\Throwable) {
+            $result['diagnostics'] = ['error_log' => [], 'app_log' => [], 'slow' => [], 'top' => []];
+        }
+        $result['plan'] = $this->buildActionPlan($server, $host, $result);
+
+        return $result;
+    }
+
+    /**
+     * Recoge evidencia del servidor justo después de la prueba: logs de error
+     * del servidor web, logs de los contenedores del dominio, consultas lentas
+     * y procesos que más consumen.
+     *
+     * @return array{error_log: array<int,string>, app_log: array<int,string>, slow: array<int,string>, top: array<int,string>}
+     */
+    private function gatherDiagnostics(Server $server, string $host): array
+    {
+        $h = escapeshellarg($host);
+        $script = <<<SH
+echo "==ERRLOG=="
+tail -n 20 /var/log/nginx/error.log 2>/dev/null
+for f in /var/log/nginx/*error*.log; do [ -f "\$f" ] && tail -n 8 "\$f"; done 2>/dev/null
+tail -n 12 /var/log/apache2/error.log 2>/dev/null
+echo "==APPLOG=="
+if command -v docker >/dev/null 2>&1; then
+  for c in \$(docker ps --format '{{.Names}}' 2>/dev/null); do
+    if docker inspect "\$c" 2>/dev/null | grep -qi {$h}; then
+      echo "--- contenedor \$c ---"
+      docker logs --tail 25 "\$c" 2>&1 | grep -iE 'error|exception|fatal|warn|fail|timeout|denied|refused|memory|too many' | tail -20
+    fi
+  done
+fi
+echo "==SLOW=="
+for f in /var/log/mysql/*slow*.log /var/lib/mysql/*-slow.log; do [ -f "\$f" ] && tail -n 25 "\$f"; done 2>/dev/null
+echo "==TOP=="
+ps aux --sort=-%cpu 2>/dev/null | head -8
+SH;
+
+        $sections = $this->splitDiag($this->ssh->run($server, $script));
+
+        return [
+            'error_log' => $this->clean($sections['ERRLOG'] ?? '', 25),
+            'app_log'   => $this->clean($sections['APPLOG'] ?? '', 30),
+            'slow'      => $this->clean($sections['SLOW'] ?? '', 25),
+            'top'       => $this->clean($sections['TOP'] ?? '', 8),
+        ];
+    }
+
+    /** @return array<string, string> */
+    private function splitDiag(string $raw): array
+    {
+        $out = []; $cur = null;
+        foreach (preg_split('/\r?\n/', $raw) as $line) {
+            if (preg_match('/^==([A-Z]+)==$/', trim($line), $m)) {
+                $cur = $m[1]; $out[$cur] = '';
+            } elseif ($cur !== null) {
+                $out[$cur] .= $line."\n";
+            }
+        }
+        return $out;
+    }
+
+    /** @return array<int, string> */
+    private function clean(string $raw, int $limit): array
+    {
+        $lines = array_values(array_filter(preg_split('/\r?\n/', $raw), fn ($l) => trim($l) !== ''));
+
+        return array_slice($lines, -$limit);
+    }
+
+    /**
+     * Construye un "plan de solución" concreto y copiable para el programador.
+     */
+    private function buildActionPlan(Server $server, string $host, array $r): string
+    {
+        $v      = $r['verdict'];
+        $codes  = collect($r['codes'])->map(fn ($c, $k) => "$k: $c")->implode(', ');
+        $now    = now()->format('d/m/Y H:i');
+
+        // Causas y pasos según el resultado
+        $causes = [];
+        $steps  = [];
+
+        if (! ($r['client'] ?? null)) {
+            $causes[] = 'El servidor no tiene curl/wget para generar carga; no se pudo medir.';
+            $steps[]  = 'Instalar curl en el servidor: apt-get install -y curl, y repetir la prueba.';
+        } elseif ($r['total'] === 0) {
+            $causes[] = "El sitio no respondió en localhost:{$this->schemePort($r['url'])} — el servicio puede estar caído o escuchando en otro puerto.";
+            $steps[]  = 'Verificar que el contenedor/servicio del sitio esté arriba (docker ps) y el puerto correcto.';
+            $steps[]  = 'Revisar los logs de la aplicación (abajo) para el error de arranque.';
+        } else {
+            $has5xx = collect($r['codes'])->keys()->contains(fn ($c) => (int) $c >= 500);
+            $hasTimeouts = ($r['codes']['000'] ?? 0) > 0;
+
+            if ($r['error_pct'] >= 20 || $has5xx) {
+                $causes[] = "El sitio devuelve errores del servidor (5xx) bajo carga ({$r['error_pct']}% de fallos). Suele ser saturación de la app o de la base de datos (conexiones agotadas, memoria, o consultas lentas).";
+                $steps[]  = 'Revisar el log de la aplicación (abajo) buscando "too many connections", "out of memory", o excepciones repetidas.';
+                $steps[]  = 'Si es MySQL: subir max_connections y/o el pool del framework; optimizar las consultas lentas listadas abajo (agregar índices, cachear resultados).';
+                $steps[]  = 'Aumentar los workers del servidor de aplicación (php-fpm pm.max_children, o réplicas del contenedor).';
+            }
+            if ($hasTimeouts) {
+                $causes[] = 'Hubo peticiones sin respuesta (timeouts): el servidor no alcanzó a atender toda la concurrencia.';
+                $steps[]  = 'Aumentar workers/hilos o poner una cola/límite; considerar más CPU/RAM si el servidor quedó saturado.';
+            }
+            if ($r['avg_ms'] >= 1000) {
+                $causes[] = "Respuestas lentas (promedio {$r['avg_ms']} ms). Indica cuellos de botella en código, consultas o falta de caché.";
+                $steps[]  = 'Agregar caché (respuestas, consultas, opcache), optimizar las consultas más pesadas y revisar llamadas externas lentas.';
+            }
+            if (($r['cpu_during'] ?? 0) >= 85) {
+                $causes[] = "El CPU llegó al {$r['cpu_during']}% durante la prueba: el sitio es intensivo en CPU bajo carga.";
+                $steps[]  = 'Perfilar el código de la ruta probada; cachear lo que se recalcula; considerar escalar horizontalmente.';
+            }
+            if (empty($causes)) {
+                $causes[] = 'El sitio respondió estable. No se detectaron errores relevantes en esta prueba.';
+                $steps[]  = 'Repetir con más concurrencia/tiempo para encontrar el punto de quiebre real.';
+            }
+        }
+
+        $lines = [];
+        $lines[] = '📋 REPORTE DE PRUEBA DE ESTRÉS — '.$server->name;
+        $lines[] = 'Fecha: '.$now;
+        $lines[] = 'Servidor: '.$server->name.' ('.$server->host.')';
+        $lines[] = 'Dominio/proyecto: '.$host;
+        $lines[] = 'URL probada: '.$r['url'];
+        $lines[] = 'Parámetros: '.$r['seconds'].'s con '.$r['concurrency'].' usuarios simultáneos';
+        $lines[] = '';
+        $lines[] = '── RESULTADO ──';
+        $lines[] = 'Veredicto: '.strtoupper($v['level']).' — '.$v['text'];
+        $lines[] = 'Peticiones: '.$r['total'].' ('.$r['rps'].'/seg)';
+        $lines[] = 'Latencia: promedio '.$r['avg_ms'].' ms · máxima '.$r['max_ms'].' ms';
+        $lines[] = 'Errores: '.$r['error_pct'].'%';
+        $lines[] = 'Códigos: '.($codes ?: 'ninguno');
+        $lines[] = 'CPU durante la prueba: '.($r['cpu_during'] !== null ? $r['cpu_during'].'%' : 'n/d');
+        $lines[] = '';
+        $lines[] = '── CAUSA PROBABLE ──';
+        foreach ($causes as $i => $c) {
+            $lines[] = ($i + 1).'. '.$c;
+        }
+        $lines[] = '';
+        $lines[] = '── PLAN DE ACCIÓN SUGERIDO ──';
+        foreach ($steps as $i => $s) {
+            $lines[] = ($i + 1).'. '.$s;
+        }
+
+        $d = $r['diagnostics'] ?? [];
+        if (! empty($d['app_log'])) {
+            $lines[] = '';
+            $lines[] = '── LOG DE LA APLICACIÓN (contenedores del dominio) ──';
+            $lines = array_merge($lines, array_slice($d['app_log'], -20));
+        }
+        if (! empty($d['error_log'])) {
+            $lines[] = '';
+            $lines[] = '── ERRORES DEL SERVIDOR WEB ──';
+            $lines = array_merge($lines, array_slice($d['error_log'], -15));
+        }
+        if (! empty($d['slow'])) {
+            $lines[] = '';
+            $lines[] = '── CONSULTAS SQL LENTAS ──';
+            $lines = array_merge($lines, array_slice($d['slow'], -20));
+        }
+        if (! empty($d['top'])) {
+            $lines[] = '';
+            $lines[] = '── PROCESOS QUE MÁS CONSUMÍAN ──';
+            $lines = array_merge($lines, $d['top']);
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function schemePort(string $url): int
+    {
+        $parts = parse_url($url);
+
+        return $parts['port'] ?? (($parts['scheme'] ?? 'https') === 'http' ? 80 : 443);
     }
 
     /** @return array<string, mixed> */
