@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Server;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * Recoge, a través de SSH, todo lo que el dashboard muestra de un servidor:
@@ -14,13 +15,27 @@ class ServerMonitor
     public function __construct(private SshClient $ssh) {}
 
     /**
+     * Ejecuta un comando de solo lectura por SSH y cachea su salida cruda
+     * unos segundos. Hace que recargar el dashboard sea casi instantáneo y
+     * que escale a muchos servidores sin abrir SSH en cada clic.
+     */
+    private function cachedRun(Server $server, string $tag, int $ttl, string $script): string
+    {
+        return Cache::remember(
+            "srvmon:{$server->id}:{$tag}",
+            $ttl,
+            fn () => $this->ssh->run($server, $script)
+        );
+    }
+
+    /**
      * Métricas de rendimiento del servidor.
      *
      * @return array<string, mixed>
      */
     public function metrics(Server $server): array
     {
-        $raw = $this->ssh->run($server, $this->metricsScript());
+        $raw = $this->cachedRun($server, 'metrics', 15, $this->metricsScript());
         $kv  = $this->parseKeyValues($raw);
 
         $memTotal = (int) ($kv['MEM_TOTAL'] ?? 0);
@@ -62,7 +77,7 @@ class ServerMonitor
      */
     public function projects(Server $server): array
     {
-        $raw      = $this->ssh->run($server, $this->projectsScript());
+        $raw      = $this->cachedRun($server, 'projects', 600, $this->projectsScript());
         $projects = [];
 
         foreach (preg_split('/\r?\n/', trim($raw)) as $line) {
@@ -87,7 +102,7 @@ class ServerMonitor
      */
     public function domains(Server $server): array
     {
-        $raw     = $this->ssh->run($server, $this->domainsScript());
+        $raw     = $this->cachedRun($server, 'domains', 600, $this->domainsScript());
         $domains = [];
 
         foreach (preg_split('/\r?\n/', trim($raw)) as $line) {
@@ -189,8 +204,10 @@ class ServerMonitor
      */
     public function sites(Server $server): array
     {
-        $raw = $this->ssh->run(
+        $raw = $this->cachedRun(
             $server,
+            'sites',
+            600,
             'echo "==NGINX=="; nginx -T 2>/dev/null || cat /etc/nginx/nginx.conf /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*.conf 2>/dev/null; '
             .'echo "==APACHE=="; cat /etc/apache2/sites-enabled/* /etc/apache2/vhosts.d/* /etc/httpd/conf.d/*.conf /etc/httpd/sites-enabled/* 2>/dev/null'
         );
@@ -302,7 +319,7 @@ elif [ -f "\$ROOT/../artisan" ]; then
 fi
 SH;
 
-        $raw      = $this->ssh->run($server, $script);
+        $raw      = $this->cachedRun($server, 'domreport:'.md5($site['access_log']), 60, $script);
         $sections = $this->splitSections($raw);
         $totals   = $this->parseKeyValues($sections['TOTALS'] ?? '');
 
@@ -327,7 +344,7 @@ SH;
      */
     public function topProcesses(Server $server): array
     {
-        $raw = $this->ssh->run($server, 'echo "==CPU=="; ps aux --sort=-%cpu 2>/dev/null | head -9; echo "==MEM=="; ps aux --sort=-%mem 2>/dev/null | head -9');
+        $raw = $this->cachedRun($server, 'topproc', 30, 'echo "==CPU=="; ps aux --sort=-%cpu 2>/dev/null | head -9; echo "==MEM=="; ps aux --sort=-%mem 2>/dev/null | head -9');
         $sections = $this->splitSections($raw);
 
         return [
@@ -359,7 +376,7 @@ if [ -n "$F" ]; then
 fi
 SH;
 
-        $raw = $this->ssh->run($server, $script);
+        $raw = $this->cachedRun($server, 'slow', 300, $script);
         $sections = $this->splitSections($raw);
         $kv = $this->parseKeyValues($raw);
 
@@ -392,7 +409,7 @@ SH;
         }
         $logArgs = implode(' ', array_map('escapeshellarg', $logs));
 
-        $raw      = $this->ssh->run($server, $this->analyticsScript($logArgs));
+        $raw      = $this->cachedRun($server, 'analytics', 120, $this->analyticsScript($logArgs));
         $sections = $this->splitSections($raw);
 
         // Ancho de banda / peticiones por log → mapear a dominios
@@ -461,7 +478,7 @@ fi
 $MYSQL -N -B -e "SHOW GLOBAL STATUS WHERE Variable_name IN ('Threads_connected','Threads_running')" 2>/dev/null
 SH;
 
-        $raw = $this->ssh->run($server, $script);
+        $raw = $this->cachedRun($server, 'mysqlstatus', 15, $script);
 
         if (str_contains($raw, 'NO')) {
             return ['available' => false, 'connections' => null, 'running' => null];

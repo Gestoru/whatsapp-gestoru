@@ -21,6 +21,8 @@
     @else
         <div class="grid cards">
             @foreach($servers as $server)
+                @php($ls = $latest[$server->id] ?? null)
+                @php($init = ['cpu'=>$ls?->cpu_pct, 'mem'=>$ls?->memPct(), 'disk'=>$ls?->diskPct()])
                 <a href="{{ route('dashboard.servers.show', $server) }}" class="card link" data-server="{{ $server->id }}"
                    data-metrics-url="{{ route('dashboard.servers.metrics', $server) }}">
                     <div class="accent-bar" style="background:linear-gradient(90deg,{{ $server->color }},transparent)"></div>
@@ -29,18 +31,19 @@
                             <div style="font-size:17px;font-weight:700">{{ $server->name }}</div>
                             <div class="muted tiny" style="margin-top:2px">{{ $server->provider_label }} · {{ $server->host }}</div>
                         </div>
-                        <span class="pill js-status"><span class="dot"></span><span class="js-status-text">Consultando…</span></span>
+                        <span class="pill js-status"><span class="dot {{ $ls ? 'ok' : '' }}"></span><span class="js-status-text">{{ $ls ? 'En línea' : 'Consultando…' }}</span></span>
                     </div>
 
                     <div class="js-metrics" style="margin-top:16px">
                         @foreach(['cpu'=>'CPU','mem'=>'RAM','disk'=>'Disco'] as $k=>$label)
+                            @php($v = $init[$k])
                             <div style="margin-bottom:10px">
-                                <div class="metric-label"><span class="muted">{{ $label }}</span><span class="js-{{ $k }}-txt muted">—</span></div>
-                                <div class="meter"><span class="js-{{ $k }}-bar" style="width:0%;background:var(--muted)"></span></div>
+                                <div class="metric-label"><span class="muted">{{ $label }}</span><span class="js-{{ $k }}-txt {{ $v===null?'muted':'' }}">{{ $v!==null ? $v.'%' : '—' }}</span></div>
+                                <div class="meter"><span class="js-{{ $k }}-bar" style="width:{{ $v ?? 0 }}%;background:{{ $v===null?'var(--muted)':($v>=90?'var(--bad)':($v>=70?'var(--warn)':'var(--ok)')) }}"></span></div>
                             </div>
                         @endforeach
                     </div>
-                    <div class="muted tiny js-os" style="margin-top:6px"></div>
+                    <div class="muted tiny js-os" style="margin-top:6px">{{ $ls ? 'última lectura '.$ls->sampled_at->diffForHumans() : '' }}</div>
                 </a>
             @endforeach
         </div>
