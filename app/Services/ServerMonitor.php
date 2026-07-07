@@ -75,6 +75,30 @@ class ServerMonitor
     }
 
     /**
+     * Visitantes en vivo: IPs de cliente conectadas ahora a la web (80/443),
+     * incluyendo conexiones recién cerradas (time-wait ≈ último minuto), con
+     * su número de conexiones. Es la base del panel «Usuarios en vivo».
+     *
+     * @return array<int, array{ip: string, conns: int}>
+     */
+    public function liveVisitors(Server $server): array
+    {
+        $script = <<<'SH'
+ss -tan state established state time-wait 2>/dev/null | awk 'NR>1{loc=$(NF-1); peer=$NF; if(loc ~ /:(80|443)$/){ip=peer; sub(/:[0-9]+$/,"",ip); gsub(/[][]/,"",ip); print ip}}' | sort | uniq -c | sort -rn | head -300
+SH;
+        $raw = $this->cachedRun($server, 'livevisitors', 10, $script);
+
+        $out = [];
+        foreach ($this->nonEmptyLines($raw) as $line) {
+            if (preg_match('/^\s*(\d+)\s+(\S+)$/', $line, $m)) {
+                $out[] = ['ip' => $m[2], 'conns' => (int) $m[1]];
+            }
+        }
+
+        return $out;
+    }
+
+    /**
      * Proyectos / servicios detectados en el servidor.
      *
      * @return array<int, array<string, string>>
@@ -806,7 +830,7 @@ ma=$(awk '/MemAvailable/{print $2*1024}' /proc/meminfo 2>/dev/null)
 echo "MEM_TOTAL=$mt"
 echo "MEM_AVAIL=$ma"
 df -P -B1 / 2>/dev/null | awk 'NR==2{print "DISK_TOTAL="$2"\nDISK_USED="$3}'
-WC=$(ss -tn state established 2>/dev/null | awk 'NR>1{loc=$(NF-1); if(loc ~ /:(80|443)$/) print $NF}')
+WC=$(ss -tan state established state time-wait 2>/dev/null | awk 'NR>1{loc=$(NF-1); if(loc ~ /:(80|443)$/) print $NF}')
 echo "WEB_CONNS=$(printf '%s\n' "$WC" | grep -c .)"
 echo "WEB_USERS=$(printf '%s\n' "$WC" | sed -E 's/:[0-9]+$//; s/^\[|\]$//g' | sort -u | grep -c .)"
 SH;

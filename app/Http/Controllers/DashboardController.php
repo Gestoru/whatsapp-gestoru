@@ -100,6 +100,68 @@ class DashboardController extends Controller
     }
 
     /**
+     * Panel «Usuarios en vivo»: quién está conectado ahora al servidor (IPs con
+     * actividad web en el último minuto), de dónde vienen (país/ciudad) y su ISP.
+     */
+    public function liveVisitors(Server $server, \App\Services\GeoLocator $geo)
+    {
+        $base = ['server' => $server, 'needsCredentials' => ! $server->hasCredentials(),
+                 'error' => null, 'visitors' => [], 'countries' => [], 'total' => 0, 'connections' => 0];
+
+        if ($base['needsCredentials']) {
+            return view('dashboard.live', $base);
+        }
+
+        try {
+            $conns = $this->monitor->liveVisitors($server);
+        } catch (\Throwable $e) {
+            return view('dashboard.live', array_merge($base, ['error' => $e->getMessage()]));
+        }
+
+        $geos = $geo->locate(array_column($conns, 'ip'));
+
+        $visitors = [];
+        foreach ($conns as $c) {
+            $g = $geos[$c['ip']] ?? null;
+            $public = $geo->isPublic($c['ip']);
+            $visitors[] = [
+                'ip'      => $c['ip'],
+                'conns'   => $c['conns'],
+                'public'  => $public,
+                'country' => $g['country'] ?? null,
+                'cc'      => $g['countryCode'] ?? null,
+                'flag'    => $public ? $geo->flag($g['countryCode'] ?? null) : '🏠',
+                'city'    => $g['city'] ?? null,
+                'isp'     => $g['isp'] ?? null,
+                'lat'     => $g['lat'] ?? null,
+                'lon'     => $g['lon'] ?? null,
+            ];
+        }
+
+        // Resumen por país (solo visitantes públicos = usuarios reales)
+        $countries = [];
+        foreach ($visitors as $v) {
+            if (! $v['public']) {
+                continue;
+            }
+            $key = $v['country'] ?? 'Desconocido';
+            $countries[$key] ??= ['country' => $key, 'flag' => $v['flag'], 'users' => 0];
+            $countries[$key]['users']++;
+        }
+        usort($countries, fn ($a, $b) => $b['users'] <=> $a['users']);
+
+        $publicVisitors = array_values(array_filter($visitors, fn ($v) => $v['public']));
+
+        return view('dashboard.live', array_merge($base, [
+            'visitors'    => $publicVisitors,
+            'countries'   => $countries,
+            'total'       => count($publicVisitors),                    // usuarios activos (IPs únicas)
+            'connections' => array_sum(array_column($visitors, 'conns')), // conexiones totales
+            'localCount'  => count($visitors) - count($publicVisitors), // internas (proxy/docker)
+        ]));
+    }
+
+    /**
      * Agrupa una lista plana de dominios/subdominios por su dominio raíz.
      *
      * @param  array<int, string>  $domains

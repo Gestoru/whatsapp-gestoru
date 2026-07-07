@@ -5,6 +5,7 @@
 @section('actions')
     <a href="{{ route('dashboard.index') }}" class="btn btn-ghost btn-sm">← Servidores</a>
     <a href="{{ route('dashboard.servers.trends', $server) }}" class="btn btn-primary btn-sm">📊 Tendencias y análisis</a>
+    <a href="{{ route('dashboard.servers.live', $server) }}" class="btn btn-sm">👥 Usuarios en vivo</a>
     <a href="{{ route('dashboard.servers.stress', $server) }}" class="btn btn-sm">🧪 Prueba de estrés</a>
     <button id="btn-test" class="btn btn-sm" data-url="{{ route('dashboard.servers.test', $server) }}">🔌 Probar conexión</button>
     <a href="{{ route('dashboard.servers.edit', $server) }}" class="btn btn-sm">✏️ Editar</a>
@@ -120,6 +121,11 @@
                 <div class="stat"><div class="k">Uptime</div><div class="v js-uptime" style="font-size:16px">—</div></div>
                 <div class="stat"><div class="k">Carga (1/5/15m)</div><div class="v js-load" style="font-size:15px">—</div></div>
                 <div class="stat"><div class="k">Núcleos CPU</div><div class="v js-cores">—</div></div>
+                <a href="{{ route('dashboard.servers.live', $server) }}" class="stat link" style="text-decoration:none;border-color:#2f3d63">
+                    <div class="k">👥 Usuarios activos</div>
+                    <div class="v js-users" style="font-size:18px">—</div>
+                    <div class="tiny" style="color:var(--accent)">ver en vivo →</div>
+                </a>
             </div>
         </div>
 
@@ -313,6 +319,7 @@ function paint(){
     document.querySelector('.js-uptime').textContent = M.uptime;
     document.querySelector('.js-load').textContent = M.load;
     document.querySelector('.js-cores').textContent = M.cpu_cores;
+    const u = document.querySelector('.js-users'); if(u) u.textContent = (M.web_users ?? '—');
 }
 paint();
 // refresco cada 15s
