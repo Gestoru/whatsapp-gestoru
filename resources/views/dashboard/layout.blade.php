@@ -59,8 +59,9 @@
         .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;
             font-size:12px;font-weight:600;border:1px solid var(--line);background:#0e1630}
         .dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
-        .dot.ok{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+        .dot.ok{background:var(--ok);box-shadow:0 0 8px var(--ok);animation:livePulse 2.2s infinite}
         .dot.bad{background:var(--bad);box-shadow:0 0 8px var(--bad)}
+        @keyframes livePulse{0%{box-shadow:0 0 0 0 rgba(47,214,122,.55)}70%{box-shadow:0 0 0 6px rgba(47,214,122,0)}100%{box-shadow:0 0 0 0 rgba(47,214,122,0)}}
         .accent-bar{height:4px;border-radius:6px;margin:-18px -18px 16px;border-radius:16px 16px 0 0}
         .meter{background:#0b1327;border:1px solid var(--line);border-radius:9px;height:9px;overflow:hidden}
         .meter > span{display:block;height:100%;border-radius:9px;transition:width .5s ease}
@@ -123,6 +124,12 @@
             box-shadow:0 8px 22px rgba(109,108,247,.45);position:relative;overflow:hidden;cursor:pointer;transition:transform .15s}
         .sb-logo:hover{transform:scale(1.06)}
         .sb-logo::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 30% 20%,rgba(255,255,255,.5),transparent 60%)}
+        /* Acento neón superior de la barra + resplandor del logo (toque 2040) */
+        .sidebar::before{content:"";position:absolute;top:0;left:0;right:0;height:2px;
+            background:linear-gradient(90deg,var(--accent),var(--cyan),var(--accent2));opacity:.85}
+        .sb-logo{animation:logoGlow 3.5s ease-in-out infinite}
+        @keyframes logoGlow{0%,100%{box-shadow:0 8px 22px rgba(109,108,247,.45)}
+            50%{box-shadow:0 8px 30px rgba(56,225,214,.55)}}
         .sb-brand{display:flex;flex-direction:column;line-height:1.15;overflow:hidden;white-space:nowrap}
         .sb-brand b{font-size:19px;letter-spacing:2px;font-weight:800;
             background:linear-gradient(90deg,#fff,#c9c8ff);-webkit-background-clip:text;background-clip:text;color:transparent}
@@ -153,8 +160,10 @@
         /* Colapsado (mini-rail de escritorio) */
         .app.mini .sidebar{width:var(--sb-mini)}
         .app.mini .sb-brand,.app.mini .sb-sec,.app.mini .sb-link .lbl,
-        .app.mini .sb-user .who,.app.mini .sb-collapse{display:none}
-        .app.mini .sb-head{justify-content:center;padding:16px 0 14px}
+        .app.mini .sb-user .who{display:none}
+        /* En compacto el botón de colapsar SIGUE visible (gira a › para expandir) */
+        .app.mini .sb-head{flex-direction:column;gap:10px;justify-content:center;padding:16px 0 14px}
+        .app.mini .sb-collapse{margin-left:0;transform:rotate(180deg)}
         .app.mini .sb-link{justify-content:center;padding:11px 0}
         .app.mini .sb-nav{padding:8px}
         .app.mini .sb-user{justify-content:center;padding:8px}
