@@ -49,7 +49,12 @@ class DomainAdminController extends Controller
     /** Dashboard de dominios: agrupados con sus subdominios colapsables. */
     public function index()
     {
-        $domains   = Domain::orderByRaw('expires_at IS NULL, expires_at')->get();
+        // Solo dominios administrables: sincronizados desde GoDaddy o creados a
+        // mano. Los detectados por el escaneo de servidores (source=scan) NO se
+        // listan aquí — este módulo administra vencimientos/renovaciones, no
+        // sirve para nombres sueltos hallados en configs.
+        $domains   = Domain::whereIn('source', ['godaddy', 'manual'])
+            ->orderByRaw('expires_at IS NULL, expires_at')->get();
         $hostnames = Hostname::with('server')->orderBy('hostname')->get();
 
         // Agrupar hostnames bajo su dominio raíz
@@ -96,36 +101,39 @@ class DomainAdminController extends Controller
         $servers = Server::where('is_active', true)->get()
             ->filter(fn ($s) => $s->hasCredentials());
 
+        // Solo enriquecemos con subdominios los dominios que YA administras
+        // (GoDaddy o creados a mano). El escaneo nunca crea dominios sueltos:
+        // así el módulo no se llena de falsos positivos hallados en configs.
+        $managed = Domain::whereIn('source', ['godaddy', 'manual'])
+            ->pluck('name')->flip();  // name => índice, para búsqueda O(1)
+
         $found = 0;
-        $newDomains = 0;
         $errors = [];
 
         foreach ($servers as $server) {
             try {
                 foreach ($this->monitor->domains($server) as $hostname) {
                     $hostname = strtolower($hostname);
+                    $apex = $this->inspector->apexFor($hostname);
+
+                    if (! $apex || ! $managed->has($apex)) {
+                        continue;  // no es subdominio de un dominio administrado
+                    }
+
                     Hostname::updateOrCreate(
                         ['hostname' => $hostname],
                         ['server_id' => $server->id, 'last_seen_at' => now()]
                     );
                     $found++;
-
-                    if ($apex = $this->inspector->apexFor($hostname)) {
-                        $domain = Domain::firstOrCreate(
-                            ['name' => $apex],
-                            ['registrar' => 'desconocido', 'source' => 'scan']
-                        );
-                        if ($domain->wasRecentlyCreated) {
-                            $newDomains++;
-                        }
-                    }
                 }
             } catch (\Throwable $e) {
                 $errors[] = $server->name.': '.$e->getMessage();
             }
         }
 
-        $msg = "Escaneo listo: {$found} subdominios encontrados, {$newDomains} dominios nuevos.";
+        $msg = $managed->isEmpty()
+            ? 'Primero sincroniza GoDaddy o agrega un dominio; luego el escaneo detecta sus subdominios.'
+            : "Escaneo listo: {$found} subdominios de tus dominios administrados actualizados.";
         if ($errors) {
             $msg .= ' Con errores en: '.implode(' · ', $errors);
         }
