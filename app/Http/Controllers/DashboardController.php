@@ -147,7 +147,50 @@ class DashboardController extends Controller
         }
         $events = array_reverse($events); // más recientes primero
 
-        return view('dashboard.trends', compact('server', 'samples', 'hours', 'peak', 'stats', 'events', 'threshold'));
+        // Gráficas de actividad MySQL (conexiones y consultas activas)
+        $hasMysql    = $samples->contains(fn ($s) => $s->mysql_conns !== null);
+        $mysqlNow    = $hasMysql ? $samples->last() : null;
+        $mysqlCharts = $hasMysql ? $this->buildMysqlCharts($samples) : [];
+
+        return view('dashboard.trends', compact(
+            'server', 'samples', 'hours', 'peak', 'stats', 'events', 'threshold',
+            'hasMysql', 'mysqlNow', 'mysqlCharts'
+        ));
+    }
+
+    /**
+     * Construye los polígonos SVG de las gráficas de MySQL (escala por su máximo).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildMysqlCharts(\Illuminate\Support\Collection $samples): array
+    {
+        $W = 1000; $padL = 4; $padR = 4; $CH = 120; $cPadT = 8; $cPadB = 6;
+        $iW = $W - $padL - $padR; $iH = $CH - $cPadT - $cPadB;
+        $n = $samples->count();
+
+        $defs = [
+            ['key' => 'mysql_conns', 'label' => 'Conexiones a la base de datos', 'color' => '#a78bfa', 'max' => max(1, (int) $samples->max('mysql_conns'))],
+            ['key' => 'mysql_running', 'label' => 'Consultas ejecutándose', 'color' => '#f472b6', 'max' => max(1, (int) $samples->max('mysql_running'))],
+        ];
+
+        $out = [];
+        foreach ($defs as $def) {
+            $pts = []; $i = 0;
+            foreach ($samples as $s) {
+                $v = (int) ($s->{$def['key']} ?? 0);
+                $x = $padL + ($n <= 1 ? $iW / 2 : $iW * $i / ($n - 1));
+                $y = $cPadT + $iH * (1 - min(1, $v / $def['max']));
+                $pts[] = round($x, 1).','.round($y, 1); $i++;
+            }
+            $line = implode(' ', $pts);
+            $f = explode(',', $pts[0]); $l = explode(',', $pts[count($pts) - 1]); $b = $cPadT + $iH;
+            $def['line'] = $line;
+            $def['area'] = $f[0].','.$b.' '.$line.' '.$l[0].','.$b;
+            $out[] = $def;
+        }
+
+        return $out;
     }
 
     /** Reporte analítico integral: CPU, RAM, ancho de banda y MySQL. */

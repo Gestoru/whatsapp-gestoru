@@ -149,6 +149,28 @@
             </div>
         @endforeach
 
+        {{-- ═══ ACTIVIDAD DE MYSQL ═══ --}}
+        @if($hasMysql)
+            <h2><span class="section-ic" style="background:#a78bfa22;border-color:#a78bfa66;color:#a78bfa">🗄️</span>
+                Actividad de MySQL <span class="muted tiny" style="font-weight:400">· ahora {{ $mysqlNow->mysql_conns ?? '—' }} conexiones · {{ $mysqlNow->mysql_running ?? '—' }} consultas activas</span>
+            </h2>
+            @foreach($mysqlCharts as $mc)
+                <div class="card" style="padding:12px;margin-bottom:12px;background:linear-gradient(180deg,#111a34,#0b1226)">
+                    <div class="row" style="justify-content:space-between;margin-bottom:4px">
+                        <span style="font-weight:600;font-size:14px;color:{{ $mc['color'] }}">{{ $mc['label'] }}</span>
+                        <span class="muted tiny">máx en rango: {{ $mc['max'] }}</span>
+                    </div>
+                    <svg viewBox="0 0 {{ $W }} 120" preserveAspectRatio="none" style="width:100%;height:110px;display:block">
+                        <defs><linearGradient id="mg-{{ $mc['key'] }}" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stop-color="{{ $mc['color'] }}" stop-opacity="0.35"/><stop offset="100%" stop-color="{{ $mc['color'] }}" stop-opacity="0"/>
+                        </linearGradient></defs>
+                        <polygon points="{{ $mc['area'] }}" fill="url(#mg-{{ $mc['key'] }})"/>
+                        <polyline points="{{ $mc['line'] }}" fill="none" stroke="{{ $mc['color'] }}" stroke-width="2.5" stroke-linejoin="round" class="glow-line" style="color:{{ $mc['color'] }}"/>
+                    </svg>
+                </div>
+            @endforeach
+        @endif
+
         {{-- ═══ REPORTE DE EVENTOS DE PICO ═══ --}}
         <h2><span class="section-ic">🚨</span> Reporte de eventos de pico <span class="muted tiny" style="font-weight:400">· CPU ≥ {{ $threshold }}%</span></h2>
         @if(empty($events))

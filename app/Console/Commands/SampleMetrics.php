@@ -23,6 +23,13 @@ class SampleMetrics extends Command
                 $m   = $monitor->metrics($server);
                 $top = $monitor->topProcesses($server);
 
+                $sql = ['connections' => null, 'running' => null];
+                try {
+                    $sql = $monitor->mysqlStatus($server);
+                } catch (\Throwable) {
+                    // MySQL opcional: si falla, se guarda la muestra sin BD
+                }
+
                 MetricSample::create([
                     'server_id'   => $server->id,
                     'sampled_at'  => now(),
@@ -36,6 +43,8 @@ class SampleMetrics extends Command
                     'top_cpu_pct' => isset($top['cpu'][0]) ? (float) $top['cpu'][0]['cpu'] : null,
                     'top_mem_cmd' => $top['mem'][0]['command'] ?? null,
                     'top_mem_pct' => isset($top['mem'][0]) ? (float) $top['mem'][0]['mem'] : null,
+                    'mysql_conns'   => $sql['connections'] ?? null,
+                    'mysql_running' => $sql['running'] ?? null,
                 ]);
 
                 $this->info("✔ {$server->name}: CPU {$m['cpu_pct']}% · RAM {$m['mem']['pct']}%");

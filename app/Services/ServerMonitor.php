@@ -438,6 +438,55 @@ SH;
     }
 
     /**
+     * Estado rápido de MySQL/MariaDB (host o Docker): conexiones y consultas
+     * en ejecución. Ligero, pensado para el muestreo periódico.
+     *
+     * @return array{available: bool, connections: ?int, running: ?int}
+     */
+    public function mysqlStatus(Server $server): array
+    {
+        $script = <<<'SH'
+MYSQL=""
+if command -v mysql >/dev/null 2>&1 && mysql -e "SELECT 1" >/dev/null 2>&1; then
+  MYSQL="mysql"
+elif command -v docker >/dev/null 2>&1; then
+  for c in $(docker ps --format '{{.Names}}' 2>/dev/null | grep -Ei 'mysql|mariadb|maria|percona|db|database'); do
+    docker exec "$c" sh -c 'command -v mysql || command -v mariadb' >/dev/null 2>&1 || continue
+    PW=$(docker exec "$c" sh -c 'printf %s "${MYSQL_ROOT_PASSWORD:-$MARIADB_ROOT_PASSWORD}"' 2>/dev/null)
+    if [ -n "$PW" ]; then TRY="docker exec $c mysql -uroot -p$PW"; else TRY="docker exec $c mysql"; fi
+    if $TRY -e "SELECT 1" >/dev/null 2>&1; then MYSQL="$TRY"; break; fi
+  done
+fi
+[ -z "$MYSQL" ] && { echo "NO"; exit 0; }
+$MYSQL -N -B -e "SHOW GLOBAL STATUS WHERE Variable_name IN ('Threads_connected','Threads_running')" 2>/dev/null
+SH;
+
+        $raw = $this->ssh->run($server, $script);
+
+        if (str_contains($raw, 'NO')) {
+            return ['available' => false, 'connections' => null, 'running' => null];
+        }
+
+        $kv = [];
+        foreach (preg_split('/\r?\n/', trim($raw)) as $line) {
+            $p = preg_split('/\s+/', trim($line));
+            if (count($p) >= 2) {
+                $kv[$p[0]] = (int) $p[1];
+            }
+        }
+
+        if (! isset($kv['Threads_connected'])) {
+            return ['available' => false, 'connections' => null, 'running' => null];
+        }
+
+        return [
+            'available'   => true,
+            'connections' => $kv['Threads_connected'] ?? null,
+            'running'     => $kv['Threads_running'] ?? null,
+        ];
+    }
+
+    /**
      * Activa el registro de consultas lentas (slow query log) de MySQL/MariaDB
      * en caliente y lo deja persistente. Acción explícita de configuración.
      *

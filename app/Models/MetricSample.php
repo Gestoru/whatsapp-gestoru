@@ -11,6 +11,7 @@ class MetricSample extends Model
         'server_id', 'sampled_at', 'cpu_pct', 'mem_used', 'mem_total',
         'disk_used', 'disk_total', 'load1',
         'top_cpu_cmd', 'top_cpu_pct', 'top_mem_cmd', 'top_mem_pct',
+        'mysql_conns', 'mysql_running',
     ];
 
     protected function casts(): array
