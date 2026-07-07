@@ -83,8 +83,14 @@ class ServerMonitor
      */
     public function liveVisitors(Server $server): array
     {
+        // ss (sockets del host) + conntrack (flujos NAT hacia Docker que ss no
+        // ve). Dedup por ip:puerto; excluye IPs privadas y las del servidor.
         $script = <<<'SH'
-ss -tan state established state time-wait 2>/dev/null | awk 'NR>1{loc=$(NF-1); peer=$NF; if(loc ~ /:(80|443)$/){ip=peer; sub(/:[0-9]+$/,"",ip); gsub(/[][]/,"",ip); print ip}}' | sort | uniq -c | sort -rn | head -300
+LIPS=$(hostname -I 2>/dev/null)
+{
+ss -tan state established state time-wait 2>/dev/null | awk 'NR>1{loc=$(NF-1); if(loc ~ /:(80|443)$/){ip=$NF; sub(/:[0-9]+$/,"",ip); gsub(/[][]/,"",ip); p=$NF; sub(/^.*:/,"",p); print ip" "p}}'
+(cat /proc/net/nf_conntrack 2>/dev/null || conntrack -L -p tcp 2>/dev/null) | awk '/ESTABLISHED|TIME_WAIT/{o="";d="";s="";for(i=1;i<=NF;i++){if(o==""&&$i~/^src=/)o=substr($i,5);if(d==""&&$i~/^dport=/)d=substr($i,7);if(s==""&&$i~/^sport=/)s=substr($i,7)};if((d=="80"||d=="443")&&o!="")print o" "s}'
+} | sort -u | awk -v L="$LIPS" 'BEGIN{n=split(L,A," ");for(i=1;i<=n;i++)loc[A[i]]=1}{ip=$1; if(ip=="") next; if(ip in loc) next; if(ip ~ /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)/) next; if(ip ~ /^(::1|::ffff:127|fe80|fd)/) next; c[ip]++} END{for(ip in c) print c[ip]" "ip}' | sort -rn | head -300
 SH;
         $raw = $this->cachedRun($server, 'livevisitors', 10, $script);
 
@@ -896,9 +902,16 @@ ma=$(awk '/MemAvailable/{print $2*1024}' /proc/meminfo 2>/dev/null)
 echo "MEM_TOTAL=$mt"
 echo "MEM_AVAIL=$ma"
 df -P -B1 / 2>/dev/null | awk 'NR==2{print "DISK_TOTAL="$2"\nDISK_USED="$3}'
-WC=$(ss -tan state established state time-wait 2>/dev/null | awk 'NR>1{loc=$(NF-1); if(loc ~ /:(80|443)$/) print $NF}')
-echo "WEB_CONNS=$(printf '%s\n' "$WC" | grep -c .)"
-echo "WEB_USERS=$(printf '%s\n' "$WC" | sed -E 's/:[0-9]+$//; s/^\[|\]$//g' | sort -u | grep -c .)"
+# Usuarios web activos: une sockets del host (ss) + tabla conntrack del kernel
+# (ve flujos NAT hacia contenedores Docker que ss no muestra). Dedup por
+# ip:puerto, excluye IPs privadas y las propias del servidor.
+LIPS=$(hostname -I 2>/dev/null)
+WPAIRS=$({
+ss -tan state established state time-wait 2>/dev/null | awk 'NR>1{loc=$(NF-1); if(loc ~ /:(80|443)$/){ip=$NF; sub(/:[0-9]+$/,"",ip); gsub(/[][]/,"",ip); p=$NF; sub(/^.*:/,"",p); print ip" "p}}'
+(cat /proc/net/nf_conntrack 2>/dev/null || conntrack -L -p tcp 2>/dev/null) | awk '/ESTABLISHED|TIME_WAIT/{o="";d="";s="";for(i=1;i<=NF;i++){if(o==""&&$i~/^src=/)o=substr($i,5);if(d==""&&$i~/^dport=/)d=substr($i,7);if(s==""&&$i~/^sport=/)s=substr($i,7)};if((d=="80"||d=="443")&&o!="")print o" "s}'
+} | sort -u | awk -v L="$LIPS" 'BEGIN{n=split(L,A," ");for(i=1;i<=n;i++)loc[A[i]]=1}{ip=$1; if(ip=="") next; if(ip in loc) next; if(ip ~ /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)/) next; if(ip ~ /^(::1|::ffff:127|fe80|fd)/) next; print}')
+echo "WEB_CONNS=$(printf '%s\n' "$WPAIRS" | grep -c .)"
+echo "WEB_USERS=$(printf '%s\n' "$WPAIRS" | awk '{print $1}' | sort -u | grep -c .)"
 SH;
     }
 
