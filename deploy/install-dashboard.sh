@@ -197,6 +197,13 @@ else
     ok "Ya existía .env — se conserva (actualización de código)"
 fi
 
+# Asegurar la zona horaria (Colombia) también en instalaciones existentes
+if grep -q '^APP_TIMEZONE=' .env; then
+    sed -i 's|^APP_TIMEZONE=.*|APP_TIMEZONE=America/Bogota|' .env
+else
+    printf '\nAPP_TIMEZONE=America/Bogota\n' >> .env
+fi
+
 # ── 5. Base de datos ────────────────────────────────────────────────────────
 log "Preparando base de datos…"
 mkdir -p database

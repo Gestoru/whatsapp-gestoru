@@ -415,6 +415,8 @@ SH;
 
         $mysqlProc = $this->parsePipeTable($sections['MYSQLPROC'] ?? '', ['id', 'user', 'db', 'time', 'state', 'info']);
         $mysqlDb   = $this->parsePipeTable($sections['MYSQLDB'] ?? '', ['db', 'mb']);
+        $mysqlTop  = $this->parsePipeTable($sections['MYSQLTOP'] ?? '', ['db', 'total_s', 'execs', 'avg_ms', 'query']);
+        $mysqlVia  = trim($sections['MYSQLVIA'] ?? '');
 
         return [
             'top_summary' => $this->nonEmptyLines($sections['TOPSUMMARY'] ?? ''),
@@ -427,9 +429,11 @@ SH;
             'total_requests' => $totalReq,
             'total_bandwidth' => $this->humanBytes($totalBytes),
             'heavy_paths' => $this->parseBytesPaths($sections['HEAVYPATHS'] ?? ''),
-            'mysql_available' => ! empty($mysqlDb) || ! empty($mysqlProc),
+            'mysql_available' => ! empty($mysqlDb) || ! empty($mysqlProc) || ! empty($mysqlTop),
+            'mysql_via'       => $mysqlVia !== '' ? $mysqlVia : null,
             'mysql_processes' => $mysqlProc,
             'mysql_databases' => $mysqlDb,
+            'mysql_top'       => $mysqlTop,
         ];
     }
 
@@ -492,29 +496,53 @@ TODAY=\$(date '+%d/%b/%Y')
 echo "==TOPSUMMARY=="
 top -bn1 2>/dev/null | head -5
 echo "==CPUTOP=="
-ps aux --sort=-%cpu 2>/dev/null | head -13
+ps aux --sort=-%cpu 2>/dev/null | head -14
 echo "==MEMTOP=="
-ps aux --sort=-%mem 2>/dev/null | head -13
+ps aux --sort=-%mem 2>/dev/null | head -14
 echo "==MEMPROG=="
 ps -eo rss,comm --no-headers 2>/dev/null | awk '{a[\$2]+=\$1} END{for(k in a) print a[k]"\t"k}' | sort -rn | head -12
 echo "==CONN=="
 ss -tan 2>/dev/null | awk 'NR>1{s[\$1]++} END{for(k in s) print s[k]"\t"k}' | sort -rn
 echo "==TOPIPS=="
 ss -tan state established 2>/dev/null | awk 'NR>1{print \$4}' | sed 's/:[0-9]*\$//' | sort | uniq -c | sort -rn | head -8
+
+# Ancho de banda: logs de los vhosts + todos los access log de nginx/apache/caddy
+LOGS="{$logArgs}"
+for extra in /var/log/nginx/*access*.log /var/log/apache2/*access*.log /var/log/httpd/*access*.log /var/log/caddy/*.log; do
+  [ -f "\$extra" ] && LOGS="\$LOGS \$extra"
+done
+LOGS=\$(printf '%s\n' \$LOGS | awk '!seen[\$0]++')
 echo "==BANDWIDTH=="
-for L in {$logArgs}; do
+for L in \$LOGS; do
   if [ -f "\$L" ]; then
-    awk -v d="[\$TODAY" -v log="\$L" '\$0 ~ d {req++; ip[\$1]=1; b+=\$10} END{n=0; for(k in ip)n++; print log"\t"req+0"\t"b+0"\t"n}' "\$L"
+    awk -v d="[\$TODAY" -v log="\$L" '\$0 ~ d {req++; ip[\$1]=1; b+=\$10} END{if(req>0){n=0; for(k in ip)n++; print log"\t"req+0"\t"b+0"\t"n}}' "\$L"
   fi
 done
 echo "==HEAVYPATHS=="
-for L in {$logArgs}; do
+for L in \$LOGS; do
   [ -f "\$L" ] && awk -v d="[\$TODAY" '\$0 ~ d {u=\$7; sub(/\\?.*/,"",u); bytes[u]+=\$10; cnt[u]++} END{for(k in bytes) print bytes[k]"\t"cnt[k]"\t"k}' "\$L"
 done | sort -rn | head -12
+
+# ── MySQL: en el host o dentro de un contenedor Docker ──────────────────────
+MYSQL=""; VIA=""
+if command -v mysql >/dev/null 2>&1 && mysql -e "SELECT 1" >/dev/null 2>&1; then
+  MYSQL="mysql"; VIA="host"
+elif command -v docker >/dev/null 2>&1; then
+  for c in \$(docker ps --format '{{.Names}}' 2>/dev/null | grep -Ei 'mysql|mariadb|maria|percona|db|database'); do
+    docker exec "\$c" sh -c 'command -v mysql || command -v mariadb' >/dev/null 2>&1 || continue
+    PW=\$(docker exec "\$c" sh -c 'printf %s "\${MYSQL_ROOT_PASSWORD:-\$MARIADB_ROOT_PASSWORD}"' 2>/dev/null)
+    if [ -n "\$PW" ]; then TRY="docker exec \$c mysql -uroot -p\$PW"; else TRY="docker exec \$c mysql"; fi
+    if \$TRY -e "SELECT 1" >/dev/null 2>&1; then MYSQL="\$TRY"; VIA="docker: \$c"; break; fi
+  done
+fi
+echo "==MYSQLVIA=="
+[ -n "\$MYSQL" ] && echo "\$VIA"
 echo "==MYSQLPROC=="
-mysql -N -B -e "SELECT id,user,COALESCE(db,'-'),time,COALESCE(state,'-'),COALESCE(LEFT(info,80),'-') FROM information_schema.processlist WHERE command<>'Sleep' AND info IS NOT NULL ORDER BY time DESC LIMIT 15" 2>/dev/null
+[ -n "\$MYSQL" ] && \$MYSQL -N -B -e "SELECT id,user,COALESCE(db,'-'),time,COALESCE(state,'-'),COALESCE(LEFT(info,80),'-') FROM information_schema.processlist WHERE command<>'Sleep' AND info IS NOT NULL ORDER BY time DESC LIMIT 15" 2>/dev/null
 echo "==MYSQLDB=="
-mysql -N -B -e "SELECT table_schema, ROUND(SUM(data_length+index_length)/1048576,1) FROM information_schema.tables GROUP BY table_schema ORDER BY 2 DESC LIMIT 12" 2>/dev/null
+[ -n "\$MYSQL" ] && \$MYSQL -N -B -e "SELECT table_schema, ROUND(SUM(data_length+index_length)/1048576,1) FROM information_schema.tables GROUP BY table_schema ORDER BY 2 DESC LIMIT 12" 2>/dev/null
+echo "==MYSQLTOP=="
+[ -n "\$MYSQL" ] && \$MYSQL -N -B -e "SELECT COALESCE(SCHEMA_NAME,'-'), ROUND(SUM_TIMER_WAIT/1000000000000,1), COUNT_STAR, ROUND(SUM_TIMER_WAIT/COUNT_STAR/1000000000,1), LEFT(REPLACE(REPLACE(DIGEST_TEXT,'\\n',' '),'\\t',' '),90) FROM performance_schema.events_statements_summary_by_digest WHERE SCHEMA_NAME IS NOT NULL AND DIGEST_TEXT IS NOT NULL ORDER BY SUM_TIMER_WAIT DESC LIMIT 12" 2>/dev/null
 SH;
     }
 
@@ -661,12 +689,18 @@ SH;
             if (count($parts) < 11 || $parts[0] === 'USER') {
                 continue;
             }
+            $cmd = $parts[10];
+            // Excluir el propio comando de medición (ps ... --sort) para no
+            // reportarlo como "el que más consume".
+            if (preg_match('/\bps\b.*--sort=|^ps\s|--sort=-%(cpu|mem)/', $cmd)) {
+                continue;
+            }
             $rows[] = [
                 'user'    => $parts[0],
                 'pid'     => $parts[1],
                 'cpu'     => $parts[2],
                 'mem'     => $parts[3],
-                'command' => mb_strimwidth($parts[10], 0, 90, '…'),
+                'command' => mb_strimwidth($cmd, 0, 90, '…'),
             ];
         }
 

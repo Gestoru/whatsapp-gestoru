@@ -162,12 +162,36 @@
         </div>
 
         {{-- ── MySQL ── --}}
-        <h2><span class="section-ic">🗄️</span> Base de datos MySQL / MariaDB</h2>
+        <h2><span class="section-ic">🗄️</span> Base de datos MySQL / MariaDB
+            @if(!empty($report['mysql_via']))<span class="muted tiny" style="font-weight:400">· leído vía {{ $report['mysql_via'] }}</span>@endif
+        </h2>
         @if(!$report['mysql_available'])
             <div class="list-card" style="padding:16px">
-                <span class="muted tiny">No pude consultar MySQL (o no está instalado, o el usuario root del sistema no tiene acceso directo). Si quieres el detalle de consultas y tamaño de bases de datos, lo configuramos en la Fase 2.</span>
+                <span class="muted tiny">No pude consultar MySQL en el host ni en contenedores Docker. Puede que la base de datos esté protegida con contraseña que no está en las variables del contenedor, o que use otro motor. Mándame un pantallazo y lo ajustamos.</span>
             </div>
         @else
+            {{-- Consultas que más han consumido (performance_schema) --}}
+            <h3 style="font-size:14px;margin:6px 0 10px;color:var(--muted)">🏆 Consultas que MÁS han consumido (acumulado desde el último reinicio de MySQL)</h3>
+            <div class="list-card" style="margin-bottom:16px">
+                @if(empty($report['mysql_top']))
+                    <div class="empty" style="padding:20px"><span class="muted tiny">performance_schema no tiene datos aún (o está desactivado). Esta tabla se llena sola con el uso.</span></div>
+                @else
+                    <table>
+                        <thead><tr><th>Base de datos</th><th style="text-align:right">Tiempo total</th><th style="text-align:right">Veces</th><th style="text-align:right">Promedio</th><th>Consulta</th></tr></thead>
+                        <tbody>
+                        @foreach($report['mysql_top'] as $q)
+                            <tr>
+                                <td class="muted tiny">{{ $q['db'] }}</td>
+                                <td style="text-align:right;font-weight:700;color:{{ (float)$q['total_s'] >= 60 ? 'var(--bad)' : ((float)$q['total_s'] >= 10 ? 'var(--warn)' : 'var(--text)') }}">{{ $q['total_s'] }}s</td>
+                                <td style="text-align:right" class="muted">{{ number_format((int)$q['execs']) }}</td>
+                                <td style="text-align:right" class="muted tiny">{{ $q['avg_ms'] }}ms</td>
+                                <td class="tiny" style="font-family:ui-monospace,monospace;word-break:break-all">{{ $q['query'] }}</td>
+                            </tr>
+                        @endforeach
+                        </tbody>
+                    </table>
+                @endif
+            </div>
             <div class="grid" style="grid-template-columns:1fr 1fr;gap:16px">
                 <div class="list-card">
                     <div class="fb-head">Consultas activas ahora</div>
