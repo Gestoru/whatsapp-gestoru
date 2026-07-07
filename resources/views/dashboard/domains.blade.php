@@ -58,12 +58,15 @@
         <p class="muted tiny" style="margin-top:8px">🔒 El secreto se guarda cifrado. Los dominios se sincronizan solos cada pocas horas.</p>
     </div>
 
-    {{-- Resumen --}}
+    {{-- Resumen (clic para filtrar) --}}
     <div class="stat-grid" style="margin-bottom:16px">
-        <div class="stat"><div class="k">Dominios</div><div class="v">{{ $stats['total'] }}</div></div>
-        <div class="stat" style="border-color:#5b2330"><div class="k">Por vencer (≤10 días)</div><div class="v" style="color:#fca5a5">{{ $stats['due'] }}</div></div>
-        <div class="stat" style="border-color:#6b5316"><div class="k">Próximos (≤30 días)</div><div class="v" style="color:#fcd34d">{{ $stats['warn'] }}</div></div>
-        <div class="stat"><div class="k">Sin fecha</div><div class="v muted">{{ $stats['unknown'] }}</div></div>
+        <div class="stat filt" data-filter="all" style="cursor:pointer"><div class="k">Todos los dominios</div><div class="v">{{ $stats['total'] }}</div></div>
+        <div class="stat filt" data-filter="due" style="cursor:pointer;border-color:#5b2330"><div class="k">Por vencer (≤10 días)</div><div class="v" style="color:#fca5a5">{{ $stats['due'] }}</div></div>
+        <div class="stat filt" data-filter="warn" style="cursor:pointer;border-color:#6b5316"><div class="k">Próximos (≤30 días)</div><div class="v" style="color:#fcd34d">{{ $stats['warn'] }}</div></div>
+        <div class="stat filt" data-filter="unknown" style="cursor:pointer"><div class="k">Sin fecha</div><div class="v muted">{{ $stats['unknown'] }}</div></div>
+    </div>
+    <div id="filter-note" class="tiny muted hidden" style="margin:-8px 0 12px">
+        Mostrando solo: <strong id="filter-label"></strong> · <a href="#" id="filter-clear" style="color:var(--accent)">ver todos</a>
     </div>
 
     {{-- Alta rápida --}}
@@ -105,8 +108,15 @@
                     @php($tone = ['due'=>'#fca5a5','warn'=>'#fcd34d','ok'=>'#86efac','unknown'=>'var(--muted)'][$lvl])
                     @php($stTone = ['ok'=>'#86efac','warn'=>'#fcd34d','bad'=>'#fca5a5','muted'=>'var(--muted)'][$domain->statusTone()])
                     @php($subs = $grouped[$domain->name] ?? [])
-                    <tr>
-                        <td style="font-weight:700">🌐 {{ $domain->name }}</td>
+                    <tr class="dom-row" data-level="{{ $lvl }}" @if(count($subs)) data-toggle="{{ $domain->id }}" style="cursor:pointer" @endif>
+                        <td style="font-weight:700">
+                            @if(count($subs))
+                                <span class="chev" id="chev-{{ $domain->id }}" style="display:inline-block;width:12px;color:var(--muted);transition:transform .2s">▸</span>
+                            @else
+                                <span style="display:inline-block;width:12px"></span>
+                            @endif
+                            🌐 {{ $domain->name }}
+                        </td>
                         <td><span class="pill tiny">{{ $domain->registrar_label }}</span></td>
                         <td>
                             @if($domain->status_label)
@@ -131,14 +141,12 @@
                         </td>
                         <td>
                             @if(count($subs))
-                                <button class="btn btn-ghost btn-sm" onclick="document.getElementById('subs-{{ $domain->id }}').classList.toggle('hidden')">
-                                    {{ count($subs) }} ▾
-                                </button>
+                                <span class="pill tiny" style="background:#2b2450;color:#b3a4f5">{{ count($subs) }} subdominios</span>
                             @else
                                 <span class="muted tiny">—</span>
                             @endif
                         </td>
-                        <td style="text-align:right;white-space:nowrap">
+                        <td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
                             <form method="POST" action="{{ route('dashboard.domains.whois', $domain) }}" style="display:inline">
                                 @csrf
                                 <button class="btn btn-ghost btn-sm" title="Consultar vencimiento por whois">🔎 whois</button>
@@ -150,7 +158,7 @@
                         </td>
                     </tr>
                     @if(count($subs))
-                        <tr id="subs-{{ $domain->id }}" class="hidden">
+                        <tr id="subs-{{ $domain->id }}" class="sub-row hidden" data-parent="{{ $domain->id }}" data-level="{{ $lvl }}">
                             <td colspan="8" style="background:#0e1630">
                                 <div style="padding:4px 6px">
                                     @foreach($subs as $h)
@@ -178,5 +186,42 @@
 @endsection
 
 @push('scripts')
-<style>.hidden{display:none}</style>
+<style>
+    .hidden{display:none}
+    .filt-hide{display:none !important}
+    .stat.filt.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+    .dom-row:hover td{background:#161f3b}
+</style>
+<script>
+// ── Desplegable de subdominios ──
+document.querySelectorAll('.dom-row[data-toggle]').forEach(row => {
+    row.addEventListener('click', () => {
+        const id = row.dataset.toggle;
+        const sub = document.getElementById('subs-' + id);
+        const chev = document.getElementById('chev-' + id);
+        if (!sub) return;
+        const open = sub.classList.toggle('hidden');
+        if (chev) chev.style.transform = open ? '' : 'rotate(90deg)';
+    });
+});
+
+// ── Filtro por estado de vencimiento ──
+const labels = {all:'todos', due:'por vencer (≤10 días)', warn:'próximos (≤30 días)', unknown:'sin fecha'};
+function applyFilter(f){
+    document.querySelectorAll('.dom-row').forEach(r => {
+        r.classList.toggle('filt-hide', f !== 'all' && r.dataset.level !== f);
+    });
+    document.querySelectorAll('.sub-row').forEach(r => {
+        r.classList.toggle('filt-hide', f !== 'all' && r.dataset.level !== f);
+    });
+    document.querySelectorAll('.stat.filt').forEach(s => s.classList.toggle('active', s.dataset.filter === f && f !== 'all'));
+    const note = document.getElementById('filter-note');
+    if (f === 'all') { note.classList.add('hidden'); }
+    else { note.classList.remove('hidden'); document.getElementById('filter-label').textContent = labels[f] || f; }
+}
+document.querySelectorAll('.stat.filt').forEach(s => {
+    s.addEventListener('click', () => applyFilter(s.dataset.filter));
+});
+document.getElementById('filter-clear')?.addEventListener('click', e => { e.preventDefault(); applyFilter('all'); });
+</script>
 @endpush

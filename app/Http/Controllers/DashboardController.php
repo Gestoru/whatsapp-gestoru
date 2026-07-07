@@ -47,7 +47,15 @@ class DashboardController extends Controller
     {
         $servers = Server::orderBy('provider')->orderBy('name')->get();
 
-        return view('dashboard.index', compact('servers'));
+        // Última muestra por servidor → las tarjetas pintan al instante (sin
+        // esperar SSH). Luego el JavaScript refresca en vivo.
+        $latest = \App\Models\MetricSample::whereIn('server_id', $servers->pluck('id'))
+            ->orderByDesc('sampled_at')
+            ->get()
+            ->groupBy('server_id')
+            ->map->first();
+
+        return view('dashboard.index', compact('servers', 'latest'));
     }
 
     /** Detalle de un servidor: métricas + proyectos + dominios. */
