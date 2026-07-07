@@ -479,23 +479,36 @@ function initMysqlLive(){
     const liveUrl = zone.dataset.mysqlLive;
     const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
+    const setTxt = (id, v, color) => {
+        const el = document.getElementById(id);
+        if(el){ el.textContent = v; if(color !== undefined) el.style.color = color; }
+    };
     const paint = async () => {
         try{
             const r = await fetch(liveUrl, {headers:{Accept:'application/json'}});
             const d = await r.json();
             if(!d.ok || !d.available) return;
             const meta = document.getElementById('mysql-live-meta');
-            if(meta) meta.textContent = '🔴 en vivo · ' + (d.connections ?? '—') + ' conexiones · '
-                + (d.running ?? '—') + ' ejecutándose · ' + new Date().toLocaleTimeString();
+            if(meta) meta.textContent = '🔴 en vivo · actualizado ' + new Date().toLocaleTimeString();
+
+            const rows    = d.processes || [];
+            const longest = rows.length ? Math.max(...rows.map(p => +p.time || 0)) : 0;
+            const stuck   = rows.filter(p => +p.time >= 5).length;
+            setTxt('ml-conns', d.connections ?? '—');
+            setTxt('ml-running', d.running ?? '—');
+            setTxt('ml-longest', rows.length ? longest + ' s' : '—', longest >= 5 ? 'var(--bad)' : 'var(--text)');
+            setTxt('ml-stuck', stuck, stuck > 0 ? 'var(--bad)' : 'var(--ok)');
+
             const body = zone.querySelector('.ml-body');
             if(!body) return;
-            if(!d.processes.length){
+            if(!rows.length){
                 body.innerHTML = '<div class="empty" style="padding:20px"><span class="muted tiny">Ninguna consulta pesada en curso 🎉</span></div>';
             }else{
-                body.innerHTML = '<table><thead><tr><th>Seg</th><th>BD</th><th>Consulta</th></tr></thead><tbody>'
-                    + d.processes.map(p =>
-                        '<tr><td style="font-weight:700;color:' + ((+p.time >= 5) ? 'var(--bad)' : 'var(--text)') + '">' + esc(p.time) + '</td>'
+                body.innerHTML = '<table><thead><tr><th>Seg</th><th>BD</th><th>Usuario</th><th>Consulta</th></tr></thead><tbody>'
+                    + rows.map(p =>
+                        '<tr><td style="font-weight:700;color:' + ((+p.time >= 5) ? 'var(--bad)' : 'var(--text)') + '">' + esc(p.time) + ((+p.time >= 5) ? ' ⚠️' : '') + '</td>'
                         + '<td class="muted tiny">' + esc(p.db) + '</td>'
+                        + '<td class="muted tiny">' + esc(p.user) + '</td>'
                         + '<td class="tiny" style="font-family:ui-monospace,monospace;word-break:break-all">' + esc(p.info) + '</td></tr>'
                     ).join('')
                     + '</tbody></table>';

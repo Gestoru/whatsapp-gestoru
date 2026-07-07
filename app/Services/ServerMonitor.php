@@ -19,12 +19,12 @@ class ServerMonitor
      * unos segundos. Hace que recargar el dashboard sea casi instantáneo y
      * que escale a muchos servidores sin abrir SSH en cada clic.
      */
-    private function cachedRun(Server $server, string $tag, int $ttl, string $script): string
+    private function cachedRun(Server $server, string $tag, int $ttl, string $script, ?int $timeout = null): string
     {
         return Cache::remember(
             "srvmon:{$server->id}:{$tag}",
             $ttl,
-            fn () => $this->ssh->run($server, $script)
+            fn () => $this->ssh->run($server, $script, $timeout)
         );
     }
 
@@ -437,7 +437,9 @@ SH;
         }
         $logArgs = implode(' ', array_map('escapeshellarg', $logs));
 
-        $raw      = $this->cachedRun($server, 'analytics', 120, $this->analyticsScript($logArgs));
+        // 45 s de margen: el script recorre logs y contenedores; con el timeout
+        // corto por defecto la salida se cortaba y MySQL aparecía "no disponible".
+        $raw      = $this->cachedRun($server, 'analytics', 120, $this->analyticsScript($logArgs), 45);
         $sections = $this->splitSections($raw);
 
         // Ancho de banda / peticiones por log → mapear a dominios
@@ -836,17 +838,6 @@ for L in \$LOGS; do
   [ -f "\$L" ] && awk -v d="[\$TODAY" '\$0 ~ d {u=\$7; sub(/\\?.*/,"",u); bytes[u]+=\$10; cnt[u]++} END{for(k in bytes) print bytes[k]"\t"cnt[k]"\t"k}' "\$L"
 done | sort -rn | head -12
 
-# Tráfico de sitios que corren DENTRO de contenedores Docker (nginx/proxy
-# escribe su access log en la salida del contenedor, no en /var/log del host)
-echo "==DOCKERBW=="
-if command -v docker >/dev/null 2>&1; then
-  SINCE=\$(date '+%Y-%m-%dT00:00:00')
-  for c in \$(docker ps --format '{{.Names}}' 2>/dev/null); do
-    docker logs --since "\$SINCE" --tail 300000 "\$c" 2>&1 \
-      | awk -v name="\$c" '\$1 ~ /^([0-9]{1,3}\.){3}[0-9]{1,3}\$/ && \$6 ~ /^"(GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH)/ {req++; ip[\$1]=1; if(\$10 ~ /^[0-9]+\$/) b+=\$10} END{if(req>0){n=0; for(k in ip)n++; print name"\t"req"\t"b+0"\t"n}}'
-  done
-fi
-
 # ── MySQL: en el host o dentro de un contenedor Docker ──────────────────────
 MYSQL=""; VIA=""
 if command -v mysql >/dev/null 2>&1 && mysql -e "SELECT 1" >/dev/null 2>&1; then
@@ -867,6 +858,20 @@ echo "==MYSQLDB=="
 [ -n "\$MYSQL" ] && \$MYSQL -N -B -e "SELECT table_schema, ROUND(SUM(data_length+index_length)/1048576,1) FROM information_schema.tables GROUP BY table_schema ORDER BY 2 DESC LIMIT 12" 2>/dev/null
 echo "==MYSQLTOP=="
 [ -n "\$MYSQL" ] && \$MYSQL -N -B -e "SELECT COALESCE(SCHEMA_NAME,'-'), ROUND(SUM_TIMER_WAIT/1000000000000,1), COUNT_STAR, ROUND(SUM_TIMER_WAIT/COUNT_STAR/1000000000,1), LEFT(REPLACE(REPLACE(DIGEST_TEXT,'\\n',' '),'\\t',' '),90) FROM performance_schema.events_statements_summary_by_digest WHERE SCHEMA_NAME IS NOT NULL AND DIGEST_TEXT IS NOT NULL ORDER BY SUM_TIMER_WAIT DESC LIMIT 12" 2>/dev/null
+
+# Tráfico de sitios que corren DENTRO de contenedores Docker. Va AL FINAL y
+# con tope de tiempo: si hay muchos contenedores con logs enormes, se corta
+# esto y no las secciones importantes de arriba.
+echo "==DOCKERBW=="
+if command -v docker >/dev/null 2>&1; then
+  SINCE=\$(date '+%Y-%m-%dT00:00:00')
+  DSTART=\$(date +%s)
+  for c in \$(docker ps --format '{{.Names}}' 2>/dev/null | head -12); do
+    [ \$(( \$(date +%s) - DSTART )) -ge 10 ] && break
+    timeout 3 docker logs --since "\$SINCE" --tail 40000 "\$c" 2>&1 \
+      | awk -v name="\$c" '\$1 ~ /^([0-9]{1,3}\.){3}[0-9]{1,3}\$/ && \$6 ~ /^"(GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH)/ {req++; ip[\$1]=1; if(\$10 ~ /^[0-9]+\$/) b+=\$10} END{if(req>0){n=0; for(k in ip)n++; print name"\t"req"\t"b+0"\t"n}}'
+  done
+fi
 SH;
     }
 
