@@ -51,11 +51,21 @@ class SshClient
 
     /**
      * Ejecuta un comando y devuelve stdout (+stderr) como string.
+     * $timeout permite operaciones más largas (p. ej. pruebas de estrés).
      */
-    public function run(Server $server, string $command): string
+    public function run(Server $server, string $command, ?int $timeout = null): string
     {
         $ssh = $this->connection($server);
+
+        if ($timeout !== null) {
+            $ssh->setTimeout($timeout);
+        }
+
         $out = $ssh->exec($command);
+
+        if ($timeout !== null) {
+            $ssh->setTimeout(20); // restaurar por defecto
+        }
 
         return is_string($out) ? $out : '';
     }

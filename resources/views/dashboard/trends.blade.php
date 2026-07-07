@@ -11,7 +11,8 @@
     $ranges = [6 => '6 h', 24 => '24 h', 72 => '3 días', 168 => '7 días'];
     $W = 1000; $H = 200; $padL = 4; $padR = 4; $padT = 12; $padB = 16;
     $n = $samples->count();
-    $build = function ($accessor) use ($samples, $n, $W, $H, $padL, $padR, $padT, $padB) {
+    $peakAt = $threshold ?? 50;
+    $build = function ($accessor) use ($samples, $n, $W, $H, $padL, $padR, $padT, $padB, $peakAt) {
         if ($n === 0) return ['line' => '', 'area' => '', 'dots' => []];
         $iW = $W - $padL - $padR; $iH = $H - $padT - $padB;
         $pts = []; $dots = []; $i = 0;
@@ -20,7 +21,7 @@
             $x = $padL + ($n <= 1 ? $iW/2 : $iW * $i/($n-1));
             $y = $padT + $iH * (1 - $v/100);
             $pts[] = round($x,1).','.round($y,1);
-            if ($v >= 75) $dots[] = [round($x,1), round($y,1), $v];
+            if ($v >= $peakAt) $dots[] = [round($x,1), round($y,1), $v];
             $i++;
         }
         $line = implode(' ', $pts);

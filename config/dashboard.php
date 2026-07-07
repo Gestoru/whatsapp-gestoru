@@ -17,4 +17,7 @@ return [
 
     'title' => env('DASHBOARD_TITLE', 'Infraestructura Gestoru'),
 
+    // A partir de qué % de CPU se considera "pico" y se genera evento/registro.
+    'cpu_peak_threshold' => (int) env('DASHBOARD_CPU_PEAK', 50),
+
 ];

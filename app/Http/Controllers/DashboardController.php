@@ -123,7 +123,7 @@ class DashboardController extends Controller
         ];
 
         // Detección de EVENTOS DE PICO: tramos contiguos con CPU alta
-        $threshold = 75;
+        $threshold = (int) config('dashboard.cpu_peak_threshold', 50);
         $events = [];
         $run = null;
         foreach ($samples as $s) {

@@ -5,6 +5,7 @@ use App\Http\Controllers\DomainAdminController;
 use App\Http\Controllers\DomainController;
 use App\Http\Controllers\ServerController;
 use App\Http\Controllers\ServerFileController;
+use App\Http\Controllers\StressController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => redirect()->route('dashboard.index'));
@@ -31,6 +32,8 @@ Route::middleware('dashboard.auth')->prefix('panel')->name('dashboard.')->group(
     Route::get('/servidores/{server}/dominio', [DomainController::class, 'show'])->name('servers.domain');
     Route::get('/servidores/{server}/analisis', [DashboardController::class, 'analytics'])->name('servers.analytics');
     Route::get('/servidores/{server}/tendencias', [DashboardController::class, 'trends'])->name('servers.trends');
+    Route::get('/servidores/{server}/estres', [StressController::class, 'form'])->name('servers.stress');
+    Route::post('/servidores/{server}/estres', [StressController::class, 'run'])->name('servers.stress.run');
 
     // Herramientas de mantenimiento (acciones explícitas)
     Route::post('/herramientas/slowlog', [DashboardController::class, 'enableSlowLogAll'])->name('tools.slowlog');
