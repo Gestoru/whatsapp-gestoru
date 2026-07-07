@@ -45,6 +45,15 @@ class ServersSeeder extends Seeder
                 'color'    => '#f472b6',
                 'notes'    => 'Servidor Winhosting · acceso SSH como root',
             ],
+            [
+                'host'     => '152.233.22.46',
+                'name'     => 'Winkhosting · gestordesalud.co',
+                'provider' => 'winhosting',
+                'username' => 'gestord1',
+                'port'     => 22902,
+                'color'    => '#38bdf8',
+                'notes'    => 'Winkhosting cPanel · usuario gestord1 · dominio gestordesalud.co · dir /home/gestord1 · si no conecta, ajusta el puerto SSH',
+            ],
         ];
 
         foreach ($servers as $data) {
