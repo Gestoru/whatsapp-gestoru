@@ -201,6 +201,50 @@ class ContaboService
         return ['ok' => true, 'matched' => $matched, 'created' => $created, 'total' => count($res['instances']), 'error' => null];
     }
 
+    /**
+     * Ejecuta una acción sobre una instancia: start | stop | restart.
+     *
+     * @return array{ok: bool, message: string}
+     */
+    public function instanceAction(string $instanceId, string $action): array
+    {
+        if (! in_array($action, ['start', 'stop', 'restart'], true)) {
+            return ['ok' => false, 'message' => 'Acción no válida.'];
+        }
+        if (! $this->configured()) {
+            return ['ok' => false, 'message' => 'Contabo no está configurado.'];
+        }
+        if (! $instanceId) {
+            return ['ok' => false, 'message' => 'Este servidor no tiene ID de instancia de Contabo. Sincroniza primero.'];
+        }
+
+        try {
+            $token = $this->token();
+            if (! $token) {
+                return ['ok' => false, 'message' => 'No se pudo autenticar con Contabo.'];
+            }
+
+            (new Client(['base_uri' => self::API, 'timeout' => 30]))
+                ->post("/v1/compute/instances/{$instanceId}/actions/{$action}", [
+                    'headers' => [
+                        'Authorization' => 'Bearer '.$token,
+                        'x-request-id'  => (string) Str::uuid(),
+                        'Accept'        => 'application/json',
+                    ],
+                ]);
+
+            $label = ['start' => 'encendido', 'stop' => 'apagado', 'restart' => 'reiniciado'][$action];
+
+            return ['ok' => true, 'message' => "Servidor {$label} correctamente (puede tardar unos segundos)."];
+        } catch (ClientException $e) {
+            $code = $e->getResponse()->getStatusCode();
+
+            return ['ok' => false, 'message' => 'Contabo rechazó la acción ('.$code.').'];
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'message' => 'No se pudo ejecutar la acción: '.$e->getMessage()];
+        }
+    }
+
     /** Próxima mensualidad a partir de la fecha de creación. */
     private function nextRenewal(string $createdIso): string
     {

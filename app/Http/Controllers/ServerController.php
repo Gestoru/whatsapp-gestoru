@@ -81,7 +81,7 @@ class ServerController extends Controller
     private function prepare(array $data, ?Server $server = null): array
     {
         $data['is_active'] = (bool) ($data['is_active'] ?? false);
-        $data['color']     = $data['color'] ?: '#6366f1';
+        $data['color']     = ($data['color'] ?? '') ?: '#6366f1';
 
         foreach (['password', 'private_key', 'key_passphrase'] as $secret) {
             if (($data[$secret] ?? '') === '' || $data[$secret] === null) {

@@ -72,6 +72,15 @@
                         <div>
                             <div style="font-size:17px;font-weight:700">{{ $server->name }}</div>
                             <div class="muted tiny" style="margin-top:2px">{{ $server->provider_label }} · {{ $server->host }}</div>
+                            @if($server->provider_status || $server->provider_product)
+                                <div class="tiny" style="margin-top:3px">
+                                    @php($ps = strtolower((string) $server->provider_status))
+                                    @if(str_contains($ps,'running'))<span style="color:var(--ok)">● encendido</span>
+                                    @elseif(str_contains($ps,'stopped'))<span style="color:var(--bad)">● apagado</span>
+                                    @elseif($ps)<span class="muted">● {{ $ps }}</span>@endif
+                                    @if($server->provider_product)<span class="muted">· {{ $server->provider_product }}</span>@endif
+                                </div>
+                            @endif
                         </div>
                         <span class="pill js-status"><span class="dot {{ $ls ? 'ok' : '' }}"></span><span class="js-status-text">{{ $ls ? 'En línea' : 'Consultando…' }}</span></span>
                     </div>

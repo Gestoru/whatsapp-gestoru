@@ -2,11 +2,26 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Server;
 use App\Services\ContaboService;
 use Illuminate\Http\Request;
 
 class ProviderController extends Controller
 {
+    /** Enciende / apaga / reinicia un VPS de Contabo por API. */
+    public function serverAction(Server $server, string $action, ContaboService $contabo)
+    {
+        $r = $contabo->instanceAction((string) $server->provider_instance_id, $action);
+
+        // Refrescar estado tras la acción
+        if ($r['ok']) {
+            \Illuminate\Support\Facades\Cache::forget('contabo_token');
+        }
+
+        return redirect()->route('dashboard.servers.show', $server)
+            ->with($r['ok'] ? 'status' : 'error', $r['message']);
+    }
+
     /** Guarda las credenciales de la API de Contabo. */
     public function connectContabo(Request $request)
     {

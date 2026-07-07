@@ -211,8 +211,15 @@ touch database/database.sqlite
 "$PHP_BIN" artisan migrate --force || fail "Fallaron las migraciones."
 "$PHP_BIN" artisan db:seed --class=ServersSeeder --force >/dev/null 2>&1 \
     && ok "Servidores de la empresa pre-cargados" || true
-"$PHP_BIN" artisan config:clear >/dev/null 2>&1 || true
 ok "Base de datos lista"
+
+# ── Optimización de producción (arranque mucho más rápido) ──────────────────
+log "Compilando configuración, rutas y vistas (producción)…"
+"$PHP_BIN" artisan optimize:clear >/dev/null 2>&1 || true
+"$PHP_BIN" artisan config:cache >/dev/null 2>&1 || true
+"$PHP_BIN" artisan route:cache >/dev/null 2>&1 || true
+"$PHP_BIN" artisan view:cache >/dev/null 2>&1 || true
+ok "Cachés de producción compiladas"
 
 # ── Muestreo automático de métricas (histórico / Fase 2) ────────────────────
 log "Programando el muestreo automático de métricas (cada 5 min)…"

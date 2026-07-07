@@ -10,7 +10,7 @@ use App\Http\Controllers\ServerFileController;
 use App\Http\Controllers\StressController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', fn () => redirect()->route('dashboard.index'));
+Route::redirect('/', '/panel');
 
 // ── Login del dashboard ─────────────────────────────────────────────────────
 Route::get('/panel/login', [DashboardController::class, 'loginForm'])->name('dashboard.login');
@@ -46,6 +46,8 @@ Route::middleware('dashboard.auth')->prefix('panel')->name('dashboard.')->group(
     // Integración con Contabo (estado y plan de los VPS)
     Route::post('/contabo/conectar', [ProviderController::class, 'connectContabo'])->name('contabo.connect');
     Route::post('/contabo/sincronizar', [ProviderController::class, 'syncContabo'])->name('contabo.sync');
+    Route::post('/servidores/{server}/contabo/{action}', [ProviderController::class, 'serverAction'])
+        ->whereIn('action', ['start', 'stop', 'restart'])->name('contabo.action');
 
     // Alertas por WhatsApp
     Route::get('/alertas', [AlertSettingsController::class, 'edit'])->name('alerts');

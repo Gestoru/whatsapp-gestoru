@@ -59,6 +59,33 @@
         </div>
     </div>
 
+    {{-- ── Control del VPS por API (Contabo) ── --}}
+    @if($server->provider_instance_id)
+        @php($ps = strtolower((string) $server->provider_status))
+        <div class="card" style="margin:8px 0 4px;padding:12px 16px">
+            <div class="row" style="justify-content:space-between;gap:12px;flex-wrap:wrap">
+                <div class="row" style="gap:14px">
+                    <span class="pill">🟠 Contabo
+                        @if(str_contains($ps,'running'))<span class="dot ok" style="margin-left:6px"></span> encendido
+                        @elseif(str_contains($ps,'stopped'))<span class="dot bad" style="margin-left:6px"></span> apagado
+                        @elseif($ps)· {{ $ps }}@endif
+                    </span>
+                    @if($server->provider_product)<span class="muted tiny">Plan: {{ $server->provider_product }}</span>@endif
+                    @if($server->provider_region)<span class="muted tiny">· {{ $server->provider_region }}</span>@endif
+                </div>
+                <div class="row" style="gap:6px">
+                    @foreach([['start','▶️ Encender','¿Encender este servidor?'],['restart','🔄 Reiniciar','¿Reiniciar este servidor? Se cortará el servicio unos segundos.'],['stop','⏹️ Apagar','¿APAGAR este servidor? Dejará de responder hasta que lo enciendas.']] as [$act,$label,$confirm])
+                        <form method="POST" action="{{ route('dashboard.contabo.action', [$server, $act]) }}" style="display:inline"
+                              onsubmit="return confirm('{{ $confirm }}')">
+                            @csrf
+                            <button class="btn btn-sm {{ $act==='stop'?'btn-danger':'' }}">{{ $label }}</button>
+                        </form>
+                    @endforeach
+                </div>
+            </div>
+        </div>
+    @endif
+
     <div id="test-result"></div>
 
     @if($needsCredentials)
