@@ -147,9 +147,11 @@ class DashboardController extends Controller
         }
         $events = array_reverse($events); // más recientes primero
 
-        // Gráficas de actividad MySQL (conexiones y consultas activas)
+        // Gráficas de actividad MySQL (conexiones y consultas activas).
+        // "Ahora" = la última muestra que sí trajo datos de MySQL (la más
+        // reciente puede venir sin BD si esa lectura puntual falló).
         $hasMysql    = $samples->contains(fn ($s) => $s->mysql_conns !== null);
-        $mysqlNow    = $hasMysql ? $samples->last() : null;
+        $mysqlNow    = $hasMysql ? $samples->last(fn ($s) => $s->mysql_conns !== null) : null;
         $mysqlCharts = $hasMysql ? $this->buildMysqlCharts($samples) : [];
 
         return view('dashboard.trends', compact(
@@ -196,24 +198,31 @@ class DashboardController extends Controller
         return $out;
     }
 
-    /** Reporte analítico integral: CPU, RAM, ancho de banda y MySQL. */
+    /** El análisis ahora vive dentro del panel unificado (tendencias). */
     public function analytics(Server $server)
+    {
+        return redirect(route('dashboard.servers.trends', $server).'#analisis');
+    }
+
+    /**
+     * Fragmento HTML del reporte analítico (CPU, RAM, ancho de banda y MySQL).
+     * Se carga por AJAX dentro del panel unificado para no frenar la página.
+     */
+    public function analyticsPanel(Server $server)
     {
         $data = ['server' => $server, 'report' => null, 'error' => null];
 
         if (! $server->hasCredentials()) {
             $data['error'] = 'Este servidor aún no tiene credenciales configuradas.';
-
-            return view('dashboard.analytics', $data);
+        } else {
+            try {
+                $data['report'] = $this->monitor->analytics($server);
+            } catch (\Throwable $e) {
+                $data['error'] = $e->getMessage();
+            }
         }
 
-        try {
-            $data['report'] = $this->monitor->analytics($server);
-        } catch (\Throwable $e) {
-            $data['error'] = $e->getMessage();
-        }
-
-        return view('dashboard.analytics', $data);
+        return view('dashboard.partials.analytics-report', $data);
     }
 
     /** Endpoint JSON para refrescar solo las métricas (auto-refresh). */

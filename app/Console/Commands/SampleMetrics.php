@@ -7,8 +7,10 @@ use App\Models\Server;
 use App\Services\AlertService;
 use App\Services\ServerMonitor;
 use Illuminate\Console\Command;
+use Illuminate\Contracts\Console\Isolatable;
+use Illuminate\Support\Facades\Log;
 
-class SampleMetrics extends Command
+class SampleMetrics extends Command implements Isolatable
 {
     protected $signature = 'metrics:sample {--prune-days=30 : Días de histórico a conservar}';
 
@@ -21,14 +23,20 @@ class SampleMetrics extends Command
 
         foreach ($servers as $server) {
             try {
-                $m   = $monitor->metrics($server);
-                $top = $monitor->topProcesses($server);
+                $m = $monitor->metrics($server);
+
+                // Procesos y MySQL son opcionales: si fallan, la muestra se
+                // guarda igual (antes un fallo aquí perdía la muestra entera).
+                $top = ['cpu' => [], 'mem' => []];
+                try {
+                    $top = $monitor->topProcesses($server);
+                } catch (\Throwable) {
+                }
 
                 $sql = ['connections' => null, 'running' => null];
                 try {
                     $sql = $monitor->mysqlStatus($server);
                 } catch (\Throwable) {
-                    // MySQL opcional: si falla, se guarda la muestra sin BD
                 }
 
                 $sample = MetricSample::create([
@@ -52,6 +60,7 @@ class SampleMetrics extends Command
 
                 $this->info("✔ {$server->name}: CPU {$m['cpu_pct']}% · RAM {$m['mem']['pct']}%");
             } catch (\Throwable $e) {
+                Log::warning('metrics:sample sin muestra', ['server' => $server->name, 'error' => $e->getMessage()]);
                 $alerts->offline($server, $e->getMessage());
                 $this->warn("✗ {$server->name}: {$e->getMessage()}");
             }
