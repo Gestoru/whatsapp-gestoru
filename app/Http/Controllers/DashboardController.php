@@ -84,7 +84,40 @@ class DashboardController extends Controller
             }
         }
 
+        // Agrupar los dominios por su raíz para una vista organizada
+        $data['domainGroups'] = $this->groupDomains($data['domains']);
+
         return view('dashboard.show', array_merge(['server' => $server], $data));
+    }
+
+    /**
+     * Agrupa una lista plana de dominios/subdominios por su dominio raíz.
+     *
+     * @param  array<int, string>  $domains
+     * @return array<string, array<int, string>>
+     */
+    private function groupDomains(array $domains): array
+    {
+        $inspector = app(\App\Services\DomainInspector::class);
+        $groups = [];
+
+        foreach ($domains as $d) {
+            $apex = $inspector->apexFor($d) ?: $d;
+            $groups[$apex][] = $d;
+        }
+
+        // Ordenar: raíces alfabéticamente, y dentro cada grupo (la raíz primero)
+        ksort($groups);
+        foreach ($groups as $apex => &$list) {
+            $list = array_values(array_unique($list));
+            usort($list, function ($a, $b) use ($apex) {
+                if ($a === $apex) return -1;
+                if ($b === $apex) return 1;
+                return strcmp($a, $b);
+            });
+        }
+
+        return $groups;
     }
 
     /** Activa el slow query log de MySQL en todos los servidores activos. */

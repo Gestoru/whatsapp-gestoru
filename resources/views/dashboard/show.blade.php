@@ -118,18 +118,43 @@
         </div>
 
         {{-- ── Dominios ── --}}
-        <h2><span class="section-ic">🌐</span> Dominios <span class="muted tiny" style="font-weight:400">({{ count($domains) }}) · clic para ver su reporte</span></h2>
-        <div class="list-card" style="padding:14px">
-            @if(empty($domains))
-                <span class="muted tiny">No se detectaron dominios en la configuración de nginx/apache.</span>
-            @else
-                <div class="row">
-                    @foreach($domains as $d)
-                        <a href="{{ route('dashboard.servers.domain', $server) }}?d={{ urlencode($d) }}" class="pill" style="cursor:pointer">🌐 {{ $d }} <span class="muted">→</span></a>
-                    @endforeach
+        <h2><span class="section-ic">🌐</span> Dominios
+            <span class="muted tiny" style="font-weight:400">({{ count($domains) }} en {{ count($domainGroups) }} dominios raíz) · clic en un subdominio para su reporte</span>
+        </h2>
+        @if(empty($domains))
+            <div class="list-card" style="padding:14px"><span class="muted tiny">No se detectaron dominios en la configuración de nginx/apache/Docker.</span></div>
+        @else
+            <div class="row" style="justify-content:space-between;margin-bottom:10px;gap:8px">
+                <input type="text" id="dom-filter" placeholder="🔎 Buscar dominio o subdominio…" autocomplete="off" style="max-width:340px">
+                <div class="row" style="gap:6px">
+                    <button type="button" class="btn btn-ghost btn-sm" id="dom-expand">Expandir todo</button>
+                    <button type="button" class="btn btn-ghost btn-sm" id="dom-collapse">Colapsar todo</button>
                 </div>
-            @endif
-        </div>
+            </div>
+            <div id="dom-groups" class="grid" style="grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px">
+                @foreach($domainGroups as $apex => $subs)
+                    <div class="list-card dom-group" data-names="{{ strtolower(implode(' ', $subs)) }}">
+                        <div class="dom-group-head" style="display:flex;align-items:center;gap:8px;padding:11px 14px;cursor:pointer;background:var(--card2);border-bottom:1px solid var(--line)">
+                            <span class="dg-chev" style="display:inline-block;width:12px;color:var(--muted);transition:transform .2s">▸</span>
+                            <span style="font-weight:700">🌐 {{ $apex }}</span>
+                            <span class="pill tiny" style="margin-left:auto">{{ count($subs) }}</span>
+                        </div>
+                        <div class="dom-group-body hidden" style="padding:10px 12px">
+                            @foreach($subs as $d)
+                                <a href="{{ route('dashboard.servers.domain', $server) }}?d={{ urlencode($d) }}"
+                                   class="dom-sub" data-name="{{ strtolower($d) }}"
+                                   style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;font-size:13px;font-family:ui-monospace,monospace">
+                                    <span>{{ $d === $apex ? '🌐' : '↳' }}</span>
+                                    <span>{{ $d }}</span>
+                                    <span class="muted" style="margin-left:auto">ver reporte →</span>
+                                </a>
+                            @endforeach
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+            <div id="dom-empty" class="muted tiny hidden" style="margin-top:10px">Sin coincidencias.</div>
+        @endif
 
         {{-- ── Procesos que más consumen ── --}}
         <h2><span class="section-ic">🔥</span> Procesos que más consumen</h2>
@@ -197,7 +222,50 @@
 @endsection
 
 @push('scripts')
+<style>
+    .dom-sub:hover{background:var(--card2)}
+    .hidden{display:none}
+</style>
 <script>
+// ── Organización de dominios (grupos + buscador) ──
+document.querySelectorAll('.dom-group-head').forEach(h => {
+    h.addEventListener('click', () => {
+        const body = h.nextElementSibling;
+        const chev = h.querySelector('.dg-chev');
+        const open = body.classList.toggle('hidden');
+        chev.style.transform = open ? '' : 'rotate(90deg)';
+    });
+});
+function setAll(collapsed){
+    document.querySelectorAll('.dom-group').forEach(g => {
+        g.querySelector('.dom-group-body').classList.toggle('hidden', collapsed);
+        g.querySelector('.dg-chev').style.transform = collapsed ? '' : 'rotate(90deg)';
+    });
+}
+document.getElementById('dom-expand')?.addEventListener('click', () => setAll(false));
+document.getElementById('dom-collapse')?.addEventListener('click', () => setAll(true));
+
+const domFilter = document.getElementById('dom-filter');
+domFilter?.addEventListener('input', () => {
+    const q = domFilter.value.toLowerCase().trim();
+    let shown = 0;
+    document.querySelectorAll('.dom-group').forEach(g => {
+        let anyMatch = false;
+        g.querySelectorAll('.dom-sub').forEach(s => {
+            const m = s.dataset.name.includes(q);
+            s.classList.toggle('hidden', q !== '' && !m);
+            if (m) anyMatch = true;
+        });
+        const matchGroup = q === '' || anyMatch;
+        g.classList.toggle('hidden', !matchGroup);
+        if (matchGroup) shown++;
+        // al buscar, abrir los grupos con coincidencias
+        if (q !== '' && anyMatch) { g.querySelector('.dom-group-body').classList.remove('hidden'); g.querySelector('.dg-chev').style.transform='rotate(90deg)'; }
+    });
+    const empty = document.getElementById('dom-empty');
+    if (empty) empty.classList.toggle('hidden', shown !== 0);
+});
+
 const CSRF = document.querySelector('meta[name=csrf-token]').content;
 const barColor = p => p >= 90 ? 'var(--bad)' : p >= 70 ? 'var(--warn)' : 'var(--ok)';
 const j = (el,html)=>el.innerHTML=html;
