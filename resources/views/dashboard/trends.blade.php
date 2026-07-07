@@ -461,6 +461,7 @@ async function loadAnalysis(){
         const r = await fetch(anBody.dataset.url, {headers:{'X-Requested-With':'XMLHttpRequest'}});
         if(!r.ok) throw new Error('HTTP '+r.status);
         anBody.innerHTML = await r.text();
+        initMysqlLive();
     }catch(e){
         anBody.innerHTML = '<div class="alert alert-bad">No se pudo cargar el análisis ('+e.message+'). '
             + '<a href="#analisis" onclick="loadAnalysis();return false" style="text-decoration:underline">Reintentar</a></div>';
@@ -468,5 +469,41 @@ async function loadAnalysis(){
 }
 document.getElementById('an-refresh').addEventListener('click', loadAnalysis);
 loadAnalysis();
+
+// ── Consultas de MySQL EN VIVO: la tabla se refresca sola cada 10 s ──
+let mysqlLiveTimer = null;
+function initMysqlLive(){
+    if(mysqlLiveTimer){ clearInterval(mysqlLiveTimer); mysqlLiveTimer = null; }
+    const zone = document.querySelector('[data-mysql-live]');
+    if(!zone) return;
+    const liveUrl = zone.dataset.mysqlLive;
+    const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+    const paint = async () => {
+        try{
+            const r = await fetch(liveUrl, {headers:{Accept:'application/json'}});
+            const d = await r.json();
+            if(!d.ok || !d.available) return;
+            const meta = document.getElementById('mysql-live-meta');
+            if(meta) meta.textContent = '🔴 en vivo · ' + (d.connections ?? '—') + ' conexiones · '
+                + (d.running ?? '—') + ' ejecutándose · ' + new Date().toLocaleTimeString();
+            const body = zone.querySelector('.ml-body');
+            if(!body) return;
+            if(!d.processes.length){
+                body.innerHTML = '<div class="empty" style="padding:20px"><span class="muted tiny">Ninguna consulta pesada en curso 🎉</span></div>';
+            }else{
+                body.innerHTML = '<table><thead><tr><th>Seg</th><th>BD</th><th>Consulta</th></tr></thead><tbody>'
+                    + d.processes.map(p =>
+                        '<tr><td style="font-weight:700;color:' + ((+p.time >= 5) ? 'var(--bad)' : 'var(--text)') + '">' + esc(p.time) + '</td>'
+                        + '<td class="muted tiny">' + esc(p.db) + '</td>'
+                        + '<td class="tiny" style="font-family:ui-monospace,monospace;word-break:break-all">' + esc(p.info) + '</td></tr>'
+                    ).join('')
+                    + '</tbody></table>';
+            }
+        }catch(_){ /* siguiente intento en 10 s */ }
+    };
+    paint();
+    mysqlLiveTimer = setInterval(paint, 10000);
+}
 </script>
 @endpush

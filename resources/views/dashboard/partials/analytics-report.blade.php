@@ -81,7 +81,7 @@
     </div>
     <div class="list-card">
         @if(empty($report['domains']))
-            <div class="empty" style="padding:20px"><span class="muted tiny">No hay tráfico registrado hoy en los logs de nginx</span></div>
+            <div class="empty" style="padding:20px"><span class="muted tiny">No hay tráfico registrado hoy (ni en los logs de nginx del host ni en los contenedores Docker)</span></div>
         @else
             <table>
                 <thead><tr><th>Dominio</th><th style="text-align:right">Ancho de banda</th><th style="text-align:right">Peticiones</th><th style="text-align:right">IPs únicas</th></tr></thead>
@@ -182,24 +182,29 @@
             @endif
         </div>
         <div class="grid" style="grid-template-columns:1fr 1fr;gap:16px">
-            <div class="list-card">
-                <div class="fb-head">Consultas activas ahora</div>
-                @if(empty($report['mysql_processes']))
-                    <div class="empty" style="padding:20px"><span class="muted tiny">Ninguna consulta pesada en curso 🎉</span></div>
-                @else
-                    <table>
-                        <thead><tr><th>Seg</th><th>BD</th><th>Consulta</th></tr></thead>
-                        <tbody>
-                        @foreach($report['mysql_processes'] as $q)
-                            <tr>
-                                <td style="font-weight:700;color:{{ (int)$q['time'] >= 5 ? 'var(--bad)' : 'var(--text)' }}">{{ $q['time'] }}</td>
-                                <td class="muted tiny">{{ $q['db'] }}</td>
-                                <td class="tiny" style="font-family:ui-monospace,monospace;word-break:break-all">{{ $q['info'] }}</td>
-                            </tr>
-                        @endforeach
-                        </tbody>
-                    </table>
-                @endif
+            <div class="list-card" data-mysql-live="{{ route('dashboard.servers.mysql.live', $server) }}">
+                <div class="fb-head" style="justify-content:space-between">
+                    <span>Consultas activas ahora</span>
+                    <span class="tiny" id="mysql-live-meta" style="color:#22e39b;font-weight:600">🔴 en vivo · se actualiza cada 10 s</span>
+                </div>
+                <div class="ml-body">
+                    @if(empty($report['mysql_processes']))
+                        <div class="empty" style="padding:20px"><span class="muted tiny">Ninguna consulta pesada en curso 🎉</span></div>
+                    @else
+                        <table>
+                            <thead><tr><th>Seg</th><th>BD</th><th>Consulta</th></tr></thead>
+                            <tbody>
+                            @foreach($report['mysql_processes'] as $q)
+                                <tr>
+                                    <td style="font-weight:700;color:{{ (int)$q['time'] >= 5 ? 'var(--bad)' : 'var(--text)' }}">{{ $q['time'] }}</td>
+                                    <td class="muted tiny">{{ $q['db'] }}</td>
+                                    <td class="tiny" style="font-family:ui-monospace,monospace;word-break:break-all">{{ $q['info'] }}</td>
+                                </tr>
+                            @endforeach
+                            </tbody>
+                        </table>
+                    @endif
+                </div>
             </div>
             <div class="list-card">
                 <div class="fb-head">Tamaño de las bases de datos</div>

@@ -74,6 +74,7 @@ Route::middleware('dashboard.auth')->prefix('panel')->name('dashboard.')->group(
 
     // Métricas y archivos (JSON)
     Route::get('/servidores/{server}/metricas', [DashboardController::class, 'metrics'])->name('servers.metrics');
+    Route::get('/servidores/{server}/mysql-vivo', [DashboardController::class, 'mysqlLive'])->name('servers.mysql.live');
     Route::get('/servidores/{server}/archivos', [ServerFileController::class, 'list'])->name('servers.files');
     Route::get('/servidores/{server}/archivo', [ServerFileController::class, 'read'])->name('servers.file');
 });

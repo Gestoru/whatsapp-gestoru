@@ -453,6 +453,17 @@ SH;
                 'ips'      => $stats['ips'],
             ];
         }
+        // Sitios dentro de contenedores Docker (su access log vive en el contenedor)
+        foreach ($this->parseBandwidthLogs($sections['DOCKERBW'] ?? '') as $container => $stats) {
+            $domains[] = [
+                'label'    => '🐳 '.$container,
+                'requests' => $stats['req'],
+                'bytes'    => $stats['bytes'],
+                'human'    => $this->humanBytes($stats['bytes']),
+                'ips'      => $stats['ips'],
+            ];
+        }
+
         usort($domains, fn ($a, $b) => $b['bytes'] <=> $a['bytes']);
 
         $totalReq   = array_sum(array_column($domains, 'requests'));
@@ -528,6 +539,45 @@ SH;
             'available'   => true,
             'connections' => $kv['Threads_connected'] ?? null,
             'running'     => $kv['Threads_running'] ?? null,
+        ];
+    }
+
+    /**
+     * Actividad de MySQL EN VIVO (sin caché): conexiones, consultas en curso
+     * y el detalle de cada una. Alimenta el refresco automático del panel.
+     *
+     * @return array<string, mixed>
+     */
+    public function mysqlLive(Server $server): array
+    {
+        $script = $this->mysqlDetectSnippet()."\n".<<<'SH'
+echo "==MLVIA=="
+[ -n "$MYSQL" ] && echo "$VIA"
+echo "==MLSTATUS=="
+[ -n "$MYSQL" ] && $MYSQL -N -B -e "SHOW GLOBAL STATUS WHERE Variable_name IN ('Threads_connected','Threads_running')" 2>/dev/null
+echo "==MLPROC=="
+[ -n "$MYSQL" ] && $MYSQL -N -B -e "SELECT time, COALESCE(db,'-'), user, COALESCE(LEFT(REPLACE(REPLACE(info,'\n',' '),'\t',' '),160),'-') FROM information_schema.processlist WHERE command<>'Sleep' AND info IS NOT NULL AND info NOT LIKE '%information_schema.processlist%' ORDER BY time DESC LIMIT 15" 2>/dev/null
+SH;
+
+        $s = $this->splitSections($this->ssh->run($server, $script));
+
+        if (trim($s['MLVIA'] ?? '') === '') {
+            return ['available' => false, 'connections' => null, 'running' => null, 'processes' => []];
+        }
+
+        $kv = [];
+        foreach ($this->nonEmptyLines($s['MLSTATUS'] ?? '') as $line) {
+            $p = preg_split('/\s+/', trim($line));
+            if (count($p) >= 2) {
+                $kv[$p[0]] = (int) $p[1];
+            }
+        }
+
+        return [
+            'available'   => true,
+            'connections' => $kv['Threads_connected'] ?? null,
+            'running'     => $kv['Threads_running'] ?? null,
+            'processes'   => $this->parsePipeTable($s['MLPROC'] ?? '', ['time', 'db', 'user', 'info']),
         ];
     }
 
@@ -786,6 +836,17 @@ for L in \$LOGS; do
   [ -f "\$L" ] && awk -v d="[\$TODAY" '\$0 ~ d {u=\$7; sub(/\\?.*/,"",u); bytes[u]+=\$10; cnt[u]++} END{for(k in bytes) print bytes[k]"\t"cnt[k]"\t"k}' "\$L"
 done | sort -rn | head -12
 
+# Tráfico de sitios que corren DENTRO de contenedores Docker (nginx/proxy
+# escribe su access log en la salida del contenedor, no en /var/log del host)
+echo "==DOCKERBW=="
+if command -v docker >/dev/null 2>&1; then
+  SINCE=\$(date '+%Y-%m-%dT00:00:00')
+  for c in \$(docker ps --format '{{.Names}}' 2>/dev/null); do
+    docker logs --since "\$SINCE" --tail 300000 "\$c" 2>&1 \
+      | awk -v name="\$c" '\$1 ~ /^([0-9]{1,3}\.){3}[0-9]{1,3}\$/ && \$6 ~ /^"(GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH)/ {req++; ip[\$1]=1; if(\$10 ~ /^[0-9]+\$/) b+=\$10} END{if(req>0){n=0; for(k in ip)n++; print name"\t"req"\t"b+0"\t"n}}'
+  done
+fi
+
 # ── MySQL: en el host o dentro de un contenedor Docker ──────────────────────
 MYSQL=""; VIA=""
 if command -v mysql >/dev/null 2>&1 && mysql -e "SELECT 1" >/dev/null 2>&1; then
@@ -801,7 +862,7 @@ fi
 echo "==MYSQLVIA=="
 [ -n "\$MYSQL" ] && echo "\$VIA"
 echo "==MYSQLPROC=="
-[ -n "\$MYSQL" ] && \$MYSQL -N -B -e "SELECT id,user,COALESCE(db,'-'),time,COALESCE(state,'-'),COALESCE(LEFT(info,80),'-') FROM information_schema.processlist WHERE command<>'Sleep' AND info IS NOT NULL ORDER BY time DESC LIMIT 15" 2>/dev/null
+[ -n "\$MYSQL" ] && \$MYSQL -N -B -e "SELECT id,user,COALESCE(db,'-'),time,COALESCE(state,'-'),COALESCE(LEFT(info,80),'-') FROM information_schema.processlist WHERE command<>'Sleep' AND info IS NOT NULL AND info NOT LIKE '%information_schema.processlist%' ORDER BY time DESC LIMIT 15" 2>/dev/null
 echo "==MYSQLDB=="
 [ -n "\$MYSQL" ] && \$MYSQL -N -B -e "SELECT table_schema, ROUND(SUM(data_length+index_length)/1048576,1) FROM information_schema.tables GROUP BY table_schema ORDER BY 2 DESC LIMIT 12" 2>/dev/null
 echo "==MYSQLTOP=="

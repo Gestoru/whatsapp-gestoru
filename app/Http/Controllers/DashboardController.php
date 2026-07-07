@@ -365,6 +365,20 @@ class DashboardController extends Controller
         return view('dashboard.partials.query-report', $data);
     }
 
+    /** Actividad de MySQL en vivo (JSON): alimenta el refresco automático. */
+    public function mysqlLive(Server $server)
+    {
+        if (! $server->hasCredentials()) {
+            return response()->json(['ok' => false, 'needs_credentials' => true], 200);
+        }
+
+        try {
+            return response()->json(['ok' => true] + $this->monitor->mysqlLive($server));
+        } catch (\Throwable $e) {
+            return response()->json(['ok' => false, 'error' => $e->getMessage()], 200);
+        }
+    }
+
     /** Endpoint JSON para refrescar solo las métricas (auto-refresh). */
     public function metrics(Server $server)
     {
