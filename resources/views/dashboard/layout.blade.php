@@ -82,6 +82,7 @@
         .tag{font-size:11px;padding:2px 8px;border-radius:6px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
         .tag-pm2{background:#1e3a2b;color:#6ee7a8} .tag-docker{background:#12324a;color:#67c7f0}
         .tag-servicio{background:#3a2f14;color:#f7c76b} .tag-carpeta{background:#2b2450;color:#b3a4f5}
+        .tag-panel{background:#3a1440;color:#f0a8f5} .tag-proyecto{background:#14324a;color:#6cc7f0}
         input,select,textarea{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);
             background:#0b1327;color:var(--text);font-size:14px;font-family:inherit}
         input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);

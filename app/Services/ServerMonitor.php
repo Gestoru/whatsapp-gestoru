@@ -991,25 +991,47 @@ SH;
     private function projectsScript(): string
     {
         return <<<'SH'
-# PM2
+# ── Paneles de control: cada cuenta es un proyecto (Winhosting/cPanel) ──
+if [ -d /var/cpanel/users ]; then
+  for f in /var/cpanel/users/*; do
+    [ -f "$f" ] || continue
+    u=$(basename "$f")
+    dom=$(sed -n 's/^DNS=//p' "$f" | head -1)
+    susp=$(sed -n 's/^SUSPENDED=//p' "$f" | head -1)
+    st="cuenta cPanel: $u"; [ "$susp" = "1" ] && st="$st · SUSPENDIDA"
+    printf 'panel\t%s\t%s\n' "${dom:-$u}" "$st"
+  done
+fi
+if command -v plesk >/dev/null 2>&1; then
+  plesk bin domain --list 2>/dev/null | while read -r d; do
+    [ -n "$d" ] && printf 'panel\t%s\tcuenta Plesk\n' "$d"
+  done
+fi
+# ── Proyectos Docker Compose (agrupa contenedores por proyecto = el "título") ──
+if command -v docker >/dev/null 2>&1; then
+  docker ps --format '{{.Label "com.docker.compose.project"}}' 2>/dev/null | grep -v '^$' | sort | uniq -c | while read -r cnt proj; do
+    printf 'proyecto\t%s\t%s contenedor(es) en ejecución\n' "$proj" "$cnt"
+  done
+  # Contenedores sueltos (sin proyecto compose)
+  docker ps --format '{{.Label "com.docker.compose.project"}}|{{.Names}}|{{.Image}}' 2>/dev/null | while IFS='|' read -r proj n img; do
+    [ -z "$proj" ] && [ -n "$n" ] && printf 'docker\t%s\t%s\n' "$n" "$img"
+  done
+fi
+# ── PM2 ──
 if command -v pm2 >/dev/null 2>&1; then
   pm2 jlist 2>/dev/null | grep -o '"name":"[^"]*"' | sed 's/"name":"//;s/"//' | sort -u | while read -r n; do
     [ -n "$n" ] && printf 'pm2\t%s\tproceso node\n' "$n"
   done
 fi
-# Docker
-if command -v docker >/dev/null 2>&1; then
-  docker ps --format '{{.Names}}\t{{.Image}}' 2>/dev/null | while IFS="$(printf '\t')" read -r n img; do
-    [ -n "$n" ] && printf 'docker\t%s\t%s\n' "$n" "$img"
-  done
-fi
-# Servicios systemd relevantes
+# ── Servicios systemd relevantes ──
 systemctl list-units --type=service --state=running --no-legend --no-pager 2>/dev/null \
   | awk '{print $1}' | grep -Ei 'nginx|apache|mysql|mariadb|postgres|php|node|redis|mongo|docker' | sort -u | while read -r s; do
     printf 'servicio\t%s\tactivo\n' "$s"
   done
-# Carpetas de proyectos web
-for base in /var/www /opt /home /srv/www; do
+# ── Carpetas de proyectos web (omite /home si hay cPanel, para no duplicar paneles) ──
+BASES="/var/www /opt /srv/www"
+[ -d /var/cpanel/users ] || BASES="$BASES /home"
+for base in $BASES; do
   if [ -d "$base" ]; then
     find "$base" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort | while read -r d; do
       printf 'carpeta\t%s\t%s\n' "$(basename "$d")" "$d"
