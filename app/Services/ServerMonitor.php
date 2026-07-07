@@ -67,6 +67,10 @@ class ServerMonitor
                 'used'        => $this->humanBytes($diskUsed),
                 'pct'         => $diskTotal ? (int) round($diskUsed / $diskTotal * 100) : null,
             ],
+            // Usuarios activos ahora: IPs de cliente únicas conectadas a la web
+            // (puertos 80/443). web_conns = conexiones totales establecidas.
+            'web_users' => isset($kv['WEB_USERS']) ? (int) $kv['WEB_USERS'] : null,
+            'web_conns' => isset($kv['WEB_CONNS']) ? (int) $kv['WEB_CONNS'] : null,
         ];
     }
 
@@ -802,6 +806,9 @@ ma=$(awk '/MemAvailable/{print $2*1024}' /proc/meminfo 2>/dev/null)
 echo "MEM_TOTAL=$mt"
 echo "MEM_AVAIL=$ma"
 df -P -B1 / 2>/dev/null | awk 'NR==2{print "DISK_TOTAL="$2"\nDISK_USED="$3}'
+WC=$(ss -tn state established 2>/dev/null | awk 'NR>1{loc=$(NF-1); if(loc ~ /:(80|443)$/) print $NF}')
+echo "WEB_CONNS=$(printf '%s\n' "$WC" | grep -c .)"
+echo "WEB_USERS=$(printf '%s\n' "$WC" | sed -E 's/:[0-9]+$//; s/^\[|\]$//g' | sort -u | grep -c .)"
 SH;
     }
 

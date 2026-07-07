@@ -63,7 +63,13 @@
                             </div>
                         @endforeach
                     </div>
-                    <div class="muted tiny js-os" style="margin-top:6px">{{ $ls ? 'última lectura '.$ls->sampled_at->diffForHumans() : '' }}</div>
+                    <div class="row" style="margin-top:12px;gap:8px">
+                        <span class="pill" title="Usuarios conectados ahora (IPs de cliente únicas en los puertos web 80/443)">
+                            👥 <b class="js-users" style="color:var(--text)">—</b>
+                            <span class="muted">activos</span>
+                        </span>
+                    </div>
+                    <div class="muted tiny js-os" style="margin-top:8px">{{ $ls ? 'última lectura '.$ls->sampled_at->diffForHumans() : '' }}</div>
                 </a>
             @endforeach
         </div>
@@ -98,6 +104,8 @@ async function loadCard(card){
         card.querySelector('.js-cpu-txt').textContent = (m.cpu_pct??'—')+(m.cpu_pct!=null?'%':'');
         paintMetric(card,'mem',m.mem);
         paintMetric(card,'disk',m.disk);
+        const users = card.querySelector('.js-users');
+        if(users) users.textContent = (m.web_users ?? '—');
         card.querySelector('.js-os').textContent = (m.os||'') + (m.uptime? ' · uptime '+m.uptime : '');
     }catch(e){
         dot.classList.add('bad'); statusText.textContent = 'Sin conexión';
