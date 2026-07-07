@@ -218,7 +218,9 @@ ok "Base de datos lista"
 log "Programando el muestreo automático de métricas (cada 5 min)…"
 cat > /etc/cron.d/gestoru-dashboard <<CRON
 # Histórico de métricas del dashboard de infraestructura Gestoru
-*/5 * * * * www-data cd ${APP_DIR} && ${PHP_BIN} artisan metrics:sample >/dev/null 2>&1
+# flock evita que dos muestreos corran a la vez (si uno tarda >5 min, el
+# siguiente espera su turno en lugar de pisarse y bloquear la base de datos).
+*/5 * * * * www-data cd ${APP_DIR} && flock -w 240 /tmp/gestoru-metrics.lock ${PHP_BIN} artisan metrics:sample >/dev/null 2>&1
 # Sincronización de dominios GoDaddy (cada 4 horas)
 17 */4 * * * www-data cd ${APP_DIR} && ${PHP_BIN} artisan domains:sync-godaddy >/dev/null 2>&1
 CRON

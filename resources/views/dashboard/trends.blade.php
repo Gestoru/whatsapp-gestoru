@@ -1,10 +1,10 @@
 @extends('dashboard.layout')
-@section('title', 'Tendencias · '.$server->name)
+@section('title', 'Panel · '.$server->name)
 @section('subtitle', 'monitoreo en tiempo real de '.$server->host)
 
 @section('actions')
     <a href="{{ route('dashboard.servers.show', $server) }}" class="btn btn-ghost btn-sm">← {{ $server->name }}</a>
-    <a href="{{ route('dashboard.servers.analytics', $server) }}" class="btn btn-sm">📈 Análisis</a>
+    <a href="#analisis" class="btn btn-sm">🔬 Ir al análisis</a>
 @endsection
 
 @php
@@ -112,6 +112,14 @@
         <div class="stat-fx"><div class="k muted tiny">Muestras</div><div class="n">{{ $stats['count'] }}</div></div>
     </div>
 
+    @php($expected = $hours * 12)
+    @if($stats['count'] > 0 && $stats['count'] < (int) ($expected * 0.6))
+        <div class="alert" style="border-color:#4a3a14;background:#2a2210;color:#fcd34d;font-size:13px;margin:10px 0 0">
+            ⚠️ Llegaron {{ $stats['count'] }} de ~{{ $expected }} muestras esperadas en este rango (1 cada 5 min).
+            Si acaba de actualizar el panel, el muestreo se normaliza solo; si persiste, revisa <code>storage/logs/laravel.log</code> en el servidor del panel.
+        </div>
+    @endif
+
     @if($samples->isEmpty())
         <div class="card empty" style="margin-top:14px">
             <div class="big">⏳</div>
@@ -159,7 +167,7 @@
         {{-- ═══ ACTIVIDAD DE MYSQL ═══ --}}
         @if($hasMysql)
             <h2><span class="section-ic" style="background:#a78bfa22;border-color:#a78bfa66;color:#a78bfa">🗄️</span>
-                Actividad de MySQL <span class="muted tiny" style="font-weight:400">· ahora {{ $mysqlNow->mysql_conns ?? '—' }} conexiones · {{ $mysqlNow->mysql_running ?? '—' }} consultas activas</span>
+                Actividad de MySQL <span class="muted tiny" style="font-weight:400">· {{ $mysqlNow->mysql_conns }} conexiones · {{ $mysqlNow->mysql_running ?? '—' }} consultas activas <span style="opacity:.7">({{ $mysqlNow->sampled_at->format('H:i') }})</span></span>
             </h2>
             @foreach($mysqlCharts as $mc)
                 <div class="card" style="padding:12px;margin-bottom:12px;background:linear-gradient(180deg,#111a34,#0b1226)">
@@ -214,6 +222,18 @@
             </div>
         @endif
     @endif
+
+    {{-- ═══ ANÁLISIS PROFUNDO (antes página aparte) ═══ --}}
+    <h2 id="analisis" style="margin-top:34px"><span class="section-ic" style="background:#6366f122;border-color:#6366f166;color:#a5b4fc">🔬</span>
+        Análisis profundo <span class="muted tiny" style="font-weight:400">· foto del servidor en este momento</span>
+        <button id="an-refresh" class="btn btn-ghost btn-sm" style="margin-left:auto">🔄 Actualizar</button>
+    </h2>
+    <div id="an-body" data-url="{{ route('dashboard.servers.analytics.panel', $server) }}">
+        <div class="list-card" style="padding:22px;text-align:center">
+            <span class="spin"></span>
+            <div class="muted tiny" style="margin-top:10px">Analizando el servidor por SSH (procesos, tráfico por dominio, MySQL)… unos segundos.</div>
+        </div>
+    </div>
 @endsection
 
 @push('scripts')
@@ -251,5 +271,22 @@ async function tick(){
 }
 tick();
 setInterval(tick, 8000);
+
+// ── Análisis profundo: se carga aparte para no frenar la página ──
+const anBody = document.getElementById('an-body');
+async function loadAnalysis(){
+    anBody.innerHTML = '<div class="list-card" style="padding:22px;text-align:center"><span class="spin"></span>'
+        + '<div class="muted tiny" style="margin-top:10px">Analizando el servidor por SSH (procesos, tráfico por dominio, MySQL)… unos segundos.</div></div>';
+    try{
+        const r = await fetch(anBody.dataset.url, {headers:{'X-Requested-With':'XMLHttpRequest'}});
+        if(!r.ok) throw new Error('HTTP '+r.status);
+        anBody.innerHTML = await r.text();
+    }catch(e){
+        anBody.innerHTML = '<div class="alert alert-bad">No se pudo cargar el análisis ('+e.message+'). '
+            + '<a href="#analisis" onclick="loadAnalysis();return false" style="text-decoration:underline">Reintentar</a></div>';
+    }
+}
+document.getElementById('an-refresh').addEventListener('click', loadAnalysis);
+loadAnalysis();
 </script>
 @endpush
