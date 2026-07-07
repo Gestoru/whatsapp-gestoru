@@ -266,10 +266,51 @@ class DashboardController extends Controller
         $mysqlNow    = $hasMysql ? $samples->last(fn ($s) => $s->mysql_conns !== null) : null;
         $mysqlCharts = $hasMysql ? $this->buildMysqlCharts($samples) : [];
 
+        $peaksAi = $this->buildPeaksAiPrompt($server, $events, $stats, $hours, $threshold);
+
         return view('dashboard.trends', compact(
             'server', 'samples', 'hours', 'peak', 'stats', 'events', 'threshold',
-            'hasMysql', 'mysqlNow', 'mysqlCharts'
+            'hasMysql', 'mysqlNow', 'mysqlCharts', 'peaksAi'
         ));
+    }
+
+    /** Informe de picos en texto plano, listo para pegárselo a una IA. */
+    private function buildPeaksAiPrompt(Server $server, array $events, array $stats, int $hours, int $threshold): string
+    {
+        $lines = [
+            'Actúa como un ingeniero SRE experto en Linux, Docker y MySQL.',
+            'Analiza este historial de picos de CPU de un servidor de producción y dame un plan concreto para reducirlos.',
+            '',
+            '## Servidor',
+            '- '.$server->name.' ('.$server->host.')',
+            '- Rango analizado: últimas '.$hours.' horas · umbral de pico: CPU ≥ '.$threshold.'%',
+            '- CPU promedio del rango: '.($stats['avg'] ?? '?').'% · máximo: '.($stats['max'] ?? '?').'% · muestras: '.$stats['count'],
+            '',
+            '## Eventos de pico (los más recientes primero)',
+        ];
+
+        if (empty($events)) {
+            $lines[] = '(sin picos en el rango)';
+        }
+        foreach (array_slice($events, 0, 20) as $ev) {
+            $p = $ev['peak'];
+            $l = '- '.$ev['start']->format('d/m H:i').': CPU '.$p->cpu_pct.'% · RAM '.($p->memPct() ?? '?').'% · carga '.$p->load1
+                .' · proceso: '.($p->top_cpu_cmd ?? '—').($p->top_cpu_pct ? ' ('.$p->top_cpu_pct.'%)' : '');
+            if ($p->top_container) {
+                $l .= ' · contenedor Docker: '.$p->top_container.' ('.$p->top_container_pct.'% de un núcleo)';
+            }
+            $lines[] = $l;
+        }
+
+        $lines[] = '';
+        $lines[] = '## Qué necesito de ti';
+        $lines[] = '1. Qué patrón ves en los picos (¿horarios? ¿mismo contenedor/proceso?).';
+        $lines[] = '2. Causas más probables y cómo confirmarlas (comandos exactos que puedo ejecutar).';
+        $lines[] = '3. Acciones concretas para reducirlos (límites de CPU por contenedor, optimización de consultas, mover tareas pesadas de horario, etc.).';
+        $lines[] = '4. Qué umbrales de alerta me recomiendas para este servidor.';
+        $lines[] = 'Si te falta información, dime exactamente qué comando ejecutar y te pego el resultado.';
+
+        return implode("\n", $lines);
     }
 
     /**
@@ -420,19 +461,26 @@ class DashboardController extends Controller
         }
 
         try {
+            // Foto instantánea (sin caché): el consumo REAL del momento,
+            // incluyendo qué contenedor Docker es el responsable.
+            $top = ['cpu' => [], 'mem' => []];
+            $containers = [];
             try {
-                $top = $this->monitor->topProcesses($server);
+                $snap = $this->monitor->peakSnapshot($server);
+                $top = $snap['top'];
+                $containers = $snap['containers'];
             } catch (\Throwable) {
-                $top = ['cpu' => [], 'mem' => []];
             }
 
-            $sample = \App\Models\MetricSample::fromMetrics($server, $m, $top);
+            $sample = \App\Models\MetricSample::fromMetrics($server, $m, $top, containers: $containers);
             app(\App\Services\AlertService::class)->checkSample($server, $sample);
 
             return [
-                'captured' => true,
-                'process'  => $sample->top_cpu_cmd,
-                'pct'      => $sample->top_cpu_pct,
+                'captured'      => true,
+                'process'       => $sample->top_cpu_cmd,
+                'pct'           => $sample->top_cpu_pct,
+                'container'     => $sample->top_container,
+                'container_pct' => $sample->top_container_pct,
             ];
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::warning('No se pudo registrar el pico crítico', [

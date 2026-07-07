@@ -551,6 +551,53 @@ SH;
     }
 
     /**
+     * Foto INSTANTÁNEA para atribuir un pico (sin caché): procesos por consumo
+     * ACTUAL (top, no el promedio de vida que da ps) y contenedores Docker por
+     * CPU del momento. Es lo que responde "¿quién está consumiendo AHORA?".
+     *
+     * @return array{top: array{cpu: array, mem: array}, containers: array<int, array{name: string, cpu: float, mem: float}>}
+     */
+    public function peakSnapshot(Server $server): array
+    {
+        $script = <<<'SH'
+echo "==PROC=="
+top -bn2 -d 0.7 -c -w 400 2>/dev/null | awk '/^top -/{blk++} blk==2 && $1 ~ /^[0-9]+$/ && $9+0 > 0 {cmd=""; for(i=12;i<=NF;i++) cmd=cmd (i>12?" ":"") $i; print $9"\t"$10"\t"$1"\t"$2"\t"cmd}' | sort -rn | head -8
+echo "==CONT=="
+command -v docker >/dev/null 2>&1 && timeout 8 docker stats --no-stream --format '{{.Name}}\t{{.CPUPerc}}\t{{.MemPerc}}' 2>/dev/null
+SH;
+
+        $s = $this->splitSections($this->ssh->run($server, $script, 30));
+
+        $procs = [];
+        foreach ($this->nonEmptyLines($s['PROC'] ?? '') as $line) {
+            $p = explode("\t", $line);
+            if (count($p) < 5 || str_contains($p[4], 'top -bn2')) {
+                continue;
+            }
+            $procs[] = ['cpu' => $p[0], 'mem' => $p[1], 'pid' => $p[2], 'user' => $p[3], 'command' => trim($p[4])];
+        }
+
+        $containers = [];
+        foreach ($this->nonEmptyLines($s['CONT'] ?? '') as $line) {
+            $p = explode("\t", $line);
+            if (count($p) < 3) {
+                continue;
+            }
+            $containers[] = [
+                'name' => $p[0],
+                'cpu'  => (float) rtrim($p[1], '%'),
+                'mem'  => (float) rtrim($p[2], '%'),
+            ];
+        }
+        usort($containers, fn ($a, $b) => $b['cpu'] <=> $a['cpu']);
+
+        $byMem = $procs;
+        usort($byMem, fn ($a, $b) => (float) $b['mem'] <=> (float) $a['mem']);
+
+        return ['top' => ['cpu' => $procs, 'mem' => $byMem], 'containers' => $containers];
+    }
+
+    /**
      * Actividad de MySQL EN VIVO (sin caché): conexiones, consultas en curso
      * y el detalle de cada una. Alimenta el refresco automático del panel.
      *

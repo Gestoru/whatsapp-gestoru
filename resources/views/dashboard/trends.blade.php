@@ -207,7 +207,10 @@
         @endif
 
         {{-- ═══ REPORTE DE EVENTOS DE PICO ═══ --}}
-        <h2><span class="section-ic">🚨</span> Reporte de eventos de pico <span class="muted tiny" style="font-weight:400">· CPU ≥ {{ $threshold }}%</span></h2>
+        <h2><span class="section-ic">🚨</span> Reporte de eventos de pico <span class="muted tiny" style="font-weight:400">· CPU ≥ {{ $threshold }}%</span>
+            <button type="button" class="btn btn-sm" style="margin-left:auto" data-copy="peaks-ai">🤖 Copiar informe para IA</button>
+        </h2>
+        <textarea id="peaks-ai" readonly style="display:none">{{ $peaksAi }}</textarea>
         <div class="grid" id="events-grid" style="gap:12px;margin-bottom:12px"></div>
         @if(empty($events))
             <div class="list-card" id="events-empty" style="padding:18px">
@@ -216,7 +219,7 @@
         @else
             <div class="grid" style="gap:12px">
                 @foreach($events as $ev)
-                    @php($dur = $ev['start']->diffInMinutes($ev['end']))
+                    @php($dur = (int) round($ev['start']->diffInMinutes($ev['end'])))
                     <div class="card" style="padding:14px 16px;border-left:3px solid #ff4d6d">
                         <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
                             <div>
@@ -233,6 +236,11 @@
                                 <div style="font-family:ui-monospace,monospace;font-size:12px;word-break:break-all;color:#fca5a5">
                                     {{ $ev['peak']->top_cpu_cmd ?? '—' }} @if($ev['peak']->top_cpu_pct)({{ $ev['peak']->top_cpu_pct }}%)@endif
                                 </div>
+                                @if($ev['peak']->top_container)
+                                    <div class="tiny" style="margin-top:4px;color:#7dd3fc;font-family:ui-monospace,monospace">
+                                        🐳 {{ $ev['peak']->top_container }} ({{ $ev['peak']->top_container_pct }}% de un núcleo)
+                                    </div>
+                                @endif
                             </div>
                         </div>
                     </div>
@@ -384,6 +392,24 @@ function handleCritical(m, d){
     critActive = crit;
 }
 
+// ── Copiar informes para IA (funciona también sin https) ──
+document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-copy]');
+    if(!btn) return;
+    const ta = document.getElementById(btn.dataset.copy);
+    if(!ta) return;
+    try{
+        await navigator.clipboard.writeText(ta.value);
+    }catch(_){
+        ta.style.display='block'; ta.focus(); ta.select();
+        document.execCommand('copy');
+        ta.style.display='none';
+    }
+    const orig = btn.textContent;
+    btn.textContent = '✅ Copiado — pégalo en tu IA';
+    setTimeout(()=>{ btn.textContent = orig; }, 2500);
+});
+
 // ═══ TOOLTIP INTERACTIVO EN LAS GRÁFICAS ═══
 // Mueve el mouse (o el dedo) por cualquier parte de la gráfica y una guía
 // muestra el valor y la hora del punto más cercano.
@@ -454,7 +480,10 @@ function prependLiveEvent(cpu, m, peak){
         + '<div class="tiny muted" style="margin-top:4px">RAM ' + (m.mem.pct ?? '—') + '% · carga ' + (m.load || '—') + '</div></div>'
         + '<div style="text-align:right;max-width:55%"><div class="tiny muted">Proceso que más consumía</div>'
         + '<div style="font-family:ui-monospace,monospace;font-size:12px;word-break:break-all;color:#fca5a5">'
-        + (peak.process ? peak.process : '—') + (peak.pct ? ' (' + peak.pct + '%)' : '') + '</div></div></div>';
+        + (peak.process ? peak.process : '—') + (peak.pct ? ' (' + peak.pct + '%)' : '') + '</div>'
+        + (peak.container ? '<div class="tiny" style="margin-top:4px;color:#7dd3fc;font-family:ui-monospace,monospace">🐳 '
+            + peak.container + (peak.container_pct ? ' (' + peak.container_pct + '% de un núcleo)' : '') + '</div>' : '')
+        + '</div></div>';
     grid.prepend(el);
 }
 

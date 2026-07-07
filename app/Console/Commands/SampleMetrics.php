@@ -25,11 +25,14 @@ class SampleMetrics extends Command implements Isolatable
             try {
                 $m = $monitor->metrics($server);
 
-                // Procesos y MySQL son opcionales: si fallan, la muestra se
-                // guarda igual (antes un fallo aquí perdía la muestra entera).
+                // Procesos, contenedores y MySQL son opcionales: si fallan,
+                // la muestra se guarda igual.
                 $top = ['cpu' => [], 'mem' => []];
+                $containers = [];
                 try {
-                    $top = $monitor->topProcesses($server);
+                    $snap = $monitor->peakSnapshot($server);
+                    $top = $snap['top'];
+                    $containers = $snap['containers'];
                 } catch (\Throwable) {
                 }
 
@@ -39,7 +42,7 @@ class SampleMetrics extends Command implements Isolatable
                 } catch (\Throwable) {
                 }
 
-                $sample = MetricSample::fromMetrics($server, $m, $top, $sql);
+                $sample = MetricSample::fromMetrics($server, $m, $top, $sql, $containers);
 
                 $alerts->checkSample($server, $sample);
 

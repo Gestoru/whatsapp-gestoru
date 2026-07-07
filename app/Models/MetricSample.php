@@ -11,6 +11,7 @@ class MetricSample extends Model
         'server_id', 'sampled_at', 'cpu_pct', 'mem_used', 'mem_total',
         'disk_used', 'disk_total', 'load1',
         'top_cpu_cmd', 'top_cpu_pct', 'top_mem_cmd', 'top_mem_pct',
+        'top_container', 'top_container_pct',
         'mysql_conns', 'mysql_running',
     ];
 
@@ -32,7 +33,7 @@ class MetricSample extends Model
      * procesos + MySQL). La usan el muestreo de cada 5 min y la captura
      * inmediata de picos críticos.
      */
-    public static function fromMetrics(Server $server, array $m, array $top = ['cpu' => [], 'mem' => []], array $sql = ['connections' => null, 'running' => null]): self
+    public static function fromMetrics(Server $server, array $m, array $top = ['cpu' => [], 'mem' => []], array $sql = ['connections' => null, 'running' => null], array $containers = []): self
     {
         return self::create([
             'server_id'   => $server->id,
@@ -47,6 +48,8 @@ class MetricSample extends Model
             'top_cpu_pct' => isset($top['cpu'][0]) ? (float) $top['cpu'][0]['cpu'] : null,
             'top_mem_cmd' => $top['mem'][0]['command'] ?? null,
             'top_mem_pct' => isset($top['mem'][0]) ? (float) $top['mem'][0]['mem'] : null,
+            'top_container'     => $containers[0]['name'] ?? null,
+            'top_container_pct' => $containers[0]['cpu'] ?? null,
             'mysql_conns'   => $sql['connections'] ?? null,
             'mysql_running' => $sql['running'] ?? null,
         ]);
