@@ -103,6 +103,24 @@ else
     done
 fi
 
+# Plan 2b: hay un PHP instalado al que solo le faltan extensiones →
+# instalarle los paquetes que le hagan falta y volver a probar.
+if [ -z "$MODE" ]; then
+    for v in 8.4 8.3 8.2; do
+        bin="/usr/bin/php${v}"
+        [ -x "$bin" ] || continue
+        log "PHP ${v} está instalado pero incompleto — instalando las extensiones que le faltan…"
+        apt-get install -y -qq "php${v}-sqlite3" "php${v}-mbstring" "php${v}-curl" \
+            "php${v}-xml" "php${v}-zip" >/dev/null 2>&1 || true
+        if php_capable "$bin"; then
+            MODE="serve"
+            PHP_BIN="$bin"
+            ok "PHP ${v} quedó completo con las extensiones instaladas"
+            break
+        fi
+    done
+fi
+
 if [ -z "$MODE" ]; then
     # Plan 3: PHP portátil autónomo (no depende de repositorios)
     log "Descargando PHP portátil (static-php)…"
