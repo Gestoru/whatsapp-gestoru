@@ -120,7 +120,8 @@
         .sb-head{display:flex;align-items:center;gap:11px;padding:16px 16px 14px;min-height:var(--tb-h)}
         .sb-logo{width:40px;height:40px;border-radius:12px;flex:0 0 auto;display:grid;place-items:center;
             background:linear-gradient(145deg,var(--accent),var(--accent2));font-size:19px;font-weight:800;color:#fff;
-            box-shadow:0 8px 22px rgba(109,108,247,.45);position:relative;overflow:hidden}
+            box-shadow:0 8px 22px rgba(109,108,247,.45);position:relative;overflow:hidden;cursor:pointer;transition:transform .15s}
+        .sb-logo:hover{transform:scale(1.06)}
         .sb-logo::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 30% 20%,rgba(255,255,255,.5),transparent 60%)}
         .sb-brand{display:flex;flex-direction:column;line-height:1.15;overflow:hidden;white-space:nowrap}
         .sb-brand b{font-size:19px;letter-spacing:2px;font-weight:800;
@@ -214,7 +215,7 @@
     <div class="app" id="app">
         <aside class="sidebar">
             <div class="sb-head">
-                <div class="sb-logo">◆</div>
+                <div class="sb-logo" id="sbLogo" title="Expandir / colapsar menú">◆</div>
                 <div class="sb-brand">
                     <b>{{ config('dashboard.brand') }}</b>
                     <small>Centro de control</small>
@@ -279,13 +280,17 @@
             const burger = document.getElementById('tbBurger');
             const backdrop = document.getElementById('backdrop');
             const collapse = document.getElementById('sbCollapse');
+            const logo = document.getElementById('sbLogo');
 
             // Estado colapsado (mini-rail) persistente en escritorio
             if(localStorage.getItem('nexo-mini') === '1') app.classList.add('mini');
-            collapse && collapse.addEventListener('click', () => {
+            const toggleMini = () => {
                 app.classList.toggle('mini');
                 localStorage.setItem('nexo-mini', app.classList.contains('mini') ? '1' : '0');
-            });
+            };
+            collapse && collapse.addEventListener('click', toggleMini);
+            // El logo también expande/colapsa (imprescindible para reabrir en modo compacto)
+            logo && logo.addEventListener('click', toggleMini);
 
             // Drawer móvil
             const openM = () => app.classList.add('open');
