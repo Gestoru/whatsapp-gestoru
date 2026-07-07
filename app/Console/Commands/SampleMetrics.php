@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\MetricSample;
 use App\Models\Server;
+use App\Services\AlertService;
 use App\Services\ServerMonitor;
 use Illuminate\Console\Command;
 
@@ -13,7 +14,7 @@ class SampleMetrics extends Command
 
     protected $description = 'Toma una muestra de métricas de cada servidor activo y la guarda para el histórico.';
 
-    public function handle(ServerMonitor $monitor): int
+    public function handle(ServerMonitor $monitor, AlertService $alerts): int
     {
         $servers = Server::where('is_active', true)->get()
             ->filter(fn (Server $s) => $s->hasCredentials());
@@ -30,7 +31,7 @@ class SampleMetrics extends Command
                     // MySQL opcional: si falla, se guarda la muestra sin BD
                 }
 
-                MetricSample::create([
+                $sample = MetricSample::create([
                     'server_id'   => $server->id,
                     'sampled_at'  => now(),
                     'cpu_pct'     => $m['cpu_pct'],
@@ -47,8 +48,11 @@ class SampleMetrics extends Command
                     'mysql_running' => $sql['running'] ?? null,
                 ]);
 
+                $alerts->checkSample($server, $sample);
+
                 $this->info("✔ {$server->name}: CPU {$m['cpu_pct']}% · RAM {$m['mem']['pct']}%");
             } catch (\Throwable $e) {
+                $alerts->offline($server, $e->getMessage());
                 $this->warn("✗ {$server->name}: {$e->getMessage()}");
             }
         }

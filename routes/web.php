@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AlertSettingsController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DomainAdminController;
 use App\Http\Controllers\DomainController;
@@ -37,6 +38,11 @@ Route::middleware('dashboard.auth')->prefix('panel')->name('dashboard.')->group(
 
     // Herramientas de mantenimiento (acciones explícitas)
     Route::post('/herramientas/slowlog', [DashboardController::class, 'enableSlowLogAll'])->name('tools.slowlog');
+
+    // Alertas por WhatsApp
+    Route::get('/alertas', [AlertSettingsController::class, 'edit'])->name('alerts');
+    Route::put('/alertas', [AlertSettingsController::class, 'update'])->name('alerts.update');
+    Route::post('/alertas/probar', [AlertSettingsController::class, 'test'])->name('alerts.test');
 
     // Administración de dominios (registradores y vencimientos)
     Route::get('/dominios', [DomainAdminController::class, 'index'])->name('domains');

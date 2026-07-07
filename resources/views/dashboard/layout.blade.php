@@ -105,6 +105,7 @@
             <div class="row">
                 <a href="{{ route('dashboard.index') }}" class="btn btn-ghost btn-sm">🖥️ Servidores</a>
                 <a href="{{ route('dashboard.domains') }}" class="btn btn-ghost btn-sm">🌐 Dominios</a>
+                <a href="{{ route('dashboard.alerts') }}" class="btn btn-ghost btn-sm">🔔 Alertas</a>
                 @yield('actions')
                 @if(config('dashboard.password'))
                     <form method="POST" action="{{ route('dashboard.logout') }}">
@@ -117,6 +118,9 @@
 
         @if(session('status'))
             <div class="alert alert-ok">{{ session('status') }}</div>
+        @endif
+        @if(session('error'))
+            <div class="alert alert-bad">{{ session('error') }}</div>
         @endif
 
         @yield('content')
