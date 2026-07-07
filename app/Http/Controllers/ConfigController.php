@@ -14,9 +14,13 @@ class ConfigController extends Controller
      * ajustes (alertas por WhatsApp, integración GoDaddy, integración Contabo
      * y preferencias generales del sistema).
      */
-    public function index(AlertService $alerts, GoDaddyService $godaddy, ContaboService $contabo)
+    public function index(AlertService $alerts, GoDaddyService $godaddy, ContaboService $contabo, \App\Services\GitHubService $github)
     {
         return view('dashboard.config', [
+            // GitHub
+            'githubConfigured' => $github->configured(),
+            'githubLastSync'   => \App\Models\Repository::max('synced_at'),
+            'githubRepoCount'  => \App\Models\Repository::count(),
             // Alertas por WhatsApp
             'enabled'      => Setting::boolean('alerts_enabled'),
             'phone'        => Setting::get('alerts_phone'),

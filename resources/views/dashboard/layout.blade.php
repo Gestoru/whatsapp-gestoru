@@ -2,6 +2,7 @@
     // ── Navegación: detecta la sección activa a partir de la ruta ────────────
     $isServers = request()->routeIs('dashboard.index') || request()->routeIs('dashboard.servers.*');
     $isDomains = request()->routeIs('dashboard.domains') || request()->routeIs('dashboard.domains.*');
+    $isRepos   = request()->routeIs('dashboard.repositories') || request()->routeIs('dashboard.repositories.*');
     $isConfig  = request()->routeIs('dashboard.config') || request()->routeIs('dashboard.alerts')
                  || request()->routeIs('dashboard.alerts.*');
     $bare = request()->routeIs('dashboard.login');
@@ -240,6 +241,9 @@
                 </a>
                 <a href="{{ route('dashboard.domains') }}" class="sb-link {{ $isDomains ? 'on' : '' }}" data-tip="Dominios">
                     <span class="ic">🌐</span><span class="lbl">Dominios</span>
+                </a>
+                <a href="{{ route('dashboard.repositories') }}" class="sb-link {{ $isRepos ? 'on' : '' }}" data-tip="Repositorios">
+                    <span class="ic">📚</span><span class="lbl">Repositorios</span>
                 </a>
 
                 <div class="sb-sec">Sistema</div>

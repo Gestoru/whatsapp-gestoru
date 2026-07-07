@@ -46,6 +46,8 @@
             <span class="badge {{ $godaddyConfigured ? 'badge-on':'badge-off' }}">{{ $godaddyConfigured ? '✔':'—' }}</span></div>
         <div class="cfg-tab" data-tab="contabo"><span class="ic">🟠</span> Contabo
             <span class="badge {{ $contaboConfigured ? 'badge-on':'badge-off' }}">{{ $contaboConfigured ? '✔':'—' }}</span></div>
+        <div class="cfg-tab" data-tab="github"><span class="ic">📚</span> GitHub
+            <span class="badge {{ $githubConfigured ? 'badge-on':'badge-off' }}">{{ $githubConfigured ? '✔':'—' }}</span></div>
     </div>
 
     <div>
@@ -198,6 +200,47 @@
                     </div>
                 </form>
                 <p class="muted tiny" style="margin-top:8px">🔒 Los secretos se guardan cifrados.</p>
+            </div>
+        </section>
+
+        {{-- ══ GITHUB ══ --}}
+        <section class="cfg-panel" id="p-github">
+            <div class="cfg-hd">
+                <div class="em">📚</div>
+                <div><h1>Integración GitHub</h1><p class="muted">Sincroniza los repositorios de tus organizaciones y tu cuenta.</p></div>
+            </div>
+            <div class="card" style="margin-top:16px">
+                <p class="muted tiny" style="margin:0 0 12px">
+                    @if($githubConfigured)
+                        <span style="color:var(--ok)">✔ Conectado.</span>
+                        {{ $githubRepoCount }} repositorios en el panel.
+                        @if($githubLastSync) Última sincronización: {{ \Carbon\Carbon::parse($githubLastSync)->diffForHumans() }}.@endif
+                    @else Aún no conectado. @endif
+                </p>
+                <div class="alert" style="background:#101a33;border-color:var(--line);color:var(--muted)">
+                    <strong style="color:var(--text)">Cómo obtener tu token (1 minuto, tú eliges organización y permisos):</strong>
+                    <ol style="margin:8px 0 0 18px;padding:0">
+                        <li>Entra a <span style="font-family:ui-monospace,monospace">github.com/settings/personal-access-tokens/new</span> (token «Fine-grained»).</li>
+                        <li>En <strong style="color:var(--text)">Resource owner</strong> elige tu <strong style="color:var(--text)">organización</strong> (o tu usuario).</li>
+                        <li>En permisos, da <strong style="color:var(--text)">Repository → Contents/Metadata: Read-only</strong> (solo lectura).</li>
+                        <li>Genera el token, cópialo y pégalo aquí abajo.</li>
+                    </ol>
+                    <div class="tiny" style="margin-top:8px">También sirve un token clásico con el scope <code>repo</code> (o <code>public_repo</code> para solo públicos).</div>
+                </div>
+                <form method="POST" action="{{ route('dashboard.repositories.github.connect') }}">
+                    @csrf
+                    <div class="field">
+                        <label>Token de GitHub @if($githubConfigured)<span class="muted">(vacío = no cambiar)</span>@endif</label>
+                        <input name="github_token" type="password" autocomplete="new-password" placeholder="github_pat_… o ghp_…" @unless($githubConfigured) required @endunless>
+                    </div>
+                    <div class="row" style="justify-content:flex-end;gap:8px">
+                        <button class="btn btn-primary btn-sm">Guardar token</button>
+                        @if($githubConfigured)
+                            <button formaction="{{ route('dashboard.repositories.sync') }}" class="btn btn-sm">🔄 Sincronizar ahora</button>
+                        @endif
+                    </div>
+                </form>
+                <p class="muted tiny" style="margin-top:8px">🔒 El token se guarda cifrado. Solo se usa para leer la lista de repositorios.</p>
             </div>
         </section>
     </div>

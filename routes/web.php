@@ -6,6 +6,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DomainAdminController;
 use App\Http\Controllers\DomainController;
 use App\Http\Controllers\ProviderController;
+use App\Http\Controllers\RepositoryController;
 use App\Http\Controllers\ServerController;
 use App\Http\Controllers\ServerFileController;
 use App\Http\Controllers\StressController;
@@ -50,6 +51,12 @@ Route::middleware('dashboard.auth')->prefix('panel')->name('dashboard.')->group(
     Route::post('/contabo/sincronizar', [ProviderController::class, 'syncContabo'])->name('contabo.sync');
     Route::post('/servidores/{server}/contabo/{action}', [ProviderController::class, 'serverAction'])
         ->whereIn('action', ['start', 'stop', 'restart'])->name('contabo.action');
+
+    // Módulo Repositorios (GitHub)
+    Route::get('/repositorios', [RepositoryController::class, 'index'])->name('repositories');
+    Route::post('/repositorios/sincronizar', [RepositoryController::class, 'sync'])->name('repositories.sync');
+    Route::post('/repositorios/github/conectar', [RepositoryController::class, 'connect'])->name('repositories.github.connect');
+    Route::put('/repositorios/{repository}/nota', [RepositoryController::class, 'updateNote'])->name('repositories.note');
 
     // Centro de configuración (unifica todos los módulos de ajustes)
     Route::get('/configuracion', [ConfigController::class, 'index'])->name('config');
