@@ -13,7 +13,18 @@ class RepositoryController extends Controller
     /** Módulo Repositorios: tabla con filtros, buscador y documentación. */
     public function index()
     {
-        $repos = Repository::orderByDesc('pushed_at')->orderBy('full_name')->get();
+        try {
+            $repos = Repository::orderByDesc('pushed_at')->orderBy('full_name')->get();
+        } catch (\Throwable $e) {
+            // La tabla aún no existe (faltan migraciones en el servidor).
+            return view('dashboard.repositories', [
+                'repos' => collect(), 'owners' => collect(), 'languages' => collect(),
+                'configured' => false, 'viewer' => null, 'lastSync' => null,
+                'stats' => ['total' => 0, 'private' => 0, 'archived' => 0, 'orgs' => 0],
+                'bootError' => 'Falta preparar la base de datos del módulo. En el servidor corre: '
+                    .'cd /opt/gestoru-dashboard && php artisan migrate --force (o vuelve a ejecutar el instalador).',
+            ]);
+        }
 
         return view('dashboard.repositories', [
             'repos'        => $repos,
@@ -21,7 +32,8 @@ class RepositoryController extends Controller
             'languages'    => $repos->pluck('language')->unique()->filter()->sort()->values(),
             'configured'   => $this->github->configured(),
             'viewer'       => $this->github->configured() ? $this->github->viewer() : null,
-            'lastSync'     => Repository::max('synced_at'),
+            'lastSync'     => $repos->max('synced_at'),
+            'bootError'    => null,
             'stats'        => [
                 'total'    => $repos->count(),
                 'private'  => $repos->where('visibility', 'private')->count(),

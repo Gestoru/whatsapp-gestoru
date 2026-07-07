@@ -58,9 +58,13 @@ class GitHubService
         if (! $this->configured()) {
             return null;
         }
-        $r = $this->http()->get('/user');
+        try {
+            $r = $this->http()->get('/user');
 
-        return $r->successful() ? $r->json() : null;
+            return $r->successful() ? $r->json() : null;
+        } catch (\Throwable $e) {
+            return null;   // sin red / token inválido: no rompemos la vista
+        }
     }
 
     /** Organizaciones visibles para el token. */

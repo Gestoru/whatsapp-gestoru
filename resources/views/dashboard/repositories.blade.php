@@ -28,6 +28,10 @@
     .topic{font-size:11px;padding:1px 7px;border-radius:6px;background:#1b2450;color:#9fb0e0;margin-right:4px}
 </style>
 
+@if($bootError ?? false)
+    <div class="alert alert-bad">⚠️ {{ $bootError }}</div>
+@endif
+
 @if(! $configured)
     <div class="card empty">
         <div class="big">📚</div>
