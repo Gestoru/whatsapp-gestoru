@@ -52,7 +52,7 @@
                 <div class="empty" style="padding:20px"><span class="muted tiny">performance_schema no tiene datos aún (o está desactivado). Esta tabla se llena sola con el uso.</span></div>
             @else
                 <table>
-                    <thead><tr><th>Base de datos</th><th style="text-align:right">Tiempo total</th><th style="text-align:right">Veces</th><th style="text-align:right">Promedio</th><th>Consulta</th></tr></thead>
+                    <thead><tr><th>Base de datos</th><th style="text-align:right">Tiempo total</th><th style="text-align:right">Veces</th><th style="text-align:right">Promedio</th><th style="text-align:right">Última vez</th><th>Consulta</th></tr></thead>
                     <tbody>
                     @foreach($report['mysql_top'] as $q)
                         <tr>
@@ -60,6 +60,7 @@
                             <td style="text-align:right;font-weight:700;color:{{ (float)$q['total_s'] >= 60 ? 'var(--bad)' : ((float)$q['total_s'] >= 10 ? 'var(--warn)' : 'var(--text)') }}">{{ $q['total_s'] }}s</td>
                             <td style="text-align:right" class="muted">{{ number_format((int)$q['execs']) }}</td>
                             <td style="text-align:right" class="muted tiny">{{ $q['avg_ms'] }}ms</td>
+                            <td class="muted tiny" style="text-align:right;white-space:nowrap">{{ $q['last_seen'] ?? '—' }}</td>
                             <td class="tiny" style="font-family:ui-monospace,monospace;word-break:break-all">{{ $q['query'] }}</td>
                         </tr>
                     @endforeach

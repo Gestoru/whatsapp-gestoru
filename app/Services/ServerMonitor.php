@@ -479,7 +479,7 @@ SH;
 
         $mysqlProc = $this->parsePipeTable($sections['MYSQLPROC'] ?? '', ['id', 'user', 'db', 'time', 'state', 'info']);
         $mysqlDb   = $this->parsePipeTable($sections['MYSQLDB'] ?? '', ['db', 'mb']);
-        $mysqlTop  = $this->parsePipeTable($sections['MYSQLTOP'] ?? '', ['db', 'total_s', 'execs', 'avg_ms', 'query']);
+        $mysqlTop  = $this->parsePipeTable($sections['MYSQLTOP'] ?? '', ['db', 'total_s', 'execs', 'avg_ms', 'last_seen', 'query']);
         $mysqlVia  = trim($sections['MYSQLVIA'] ?? '');
 
         return [
@@ -863,7 +863,7 @@ echo "==MYSQLPROC=="
 echo "==MYSQLDB=="
 [ -n "\$MYSQL" ] && \$MYSQL -N -B -e "SELECT table_schema, ROUND(SUM(data_length+index_length)/1048576,1) FROM information_schema.tables GROUP BY table_schema ORDER BY 2 DESC LIMIT 12" 2>/dev/null
 echo "==MYSQLTOP=="
-[ -n "\$MYSQL" ] && \$MYSQL -N -B -e "SELECT COALESCE(SCHEMA_NAME,'-'), ROUND(SUM_TIMER_WAIT/1000000000000,1), COUNT_STAR, ROUND(SUM_TIMER_WAIT/COUNT_STAR/1000000000,1), LEFT(REPLACE(REPLACE(DIGEST_TEXT,'\\n',' '),'\\t',' '),90) FROM performance_schema.events_statements_summary_by_digest WHERE SCHEMA_NAME IS NOT NULL AND DIGEST_TEXT IS NOT NULL ORDER BY SUM_TIMER_WAIT DESC LIMIT 12" 2>/dev/null
+[ -n "\$MYSQL" ] && \$MYSQL -N -B -e "SELECT COALESCE(SCHEMA_NAME,'-'), ROUND(SUM_TIMER_WAIT/1000000000000,1), COUNT_STAR, ROUND(SUM_TIMER_WAIT/COUNT_STAR/1000000000,1), DATE_FORMAT(LAST_SEEN,'%d/%m %H:%i'), LEFT(REPLACE(REPLACE(DIGEST_TEXT,'\\n',' '),'\\t',' '),90) FROM performance_schema.events_statements_summary_by_digest WHERE SCHEMA_NAME IS NOT NULL AND DIGEST_TEXT IS NOT NULL ORDER BY SUM_TIMER_WAIT DESC LIMIT 12" 2>/dev/null
 
 # Tráfico de sitios que corren DENTRO de contenedores Docker. Va AL FINAL y
 # con tope de tiempo: si hay muchos contenedores con logs enormes, se corta

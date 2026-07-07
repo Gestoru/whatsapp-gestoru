@@ -355,6 +355,12 @@ function quakeSound(vol = 0.5){
     });
 }
 
+// La alarma completa suena DOS veces (retumbo + avisos, pausa, y se repite)
+function quakeAlarm(){
+    quakeSound();
+    setTimeout(() => quakeSound(0.45), 3400);
+}
+
 function handleCritical(m, d){
     const cpu  = m.cpu_pct;
     const crit = cpu != null && cpu >= CRIT;
@@ -368,7 +374,7 @@ function handleCritical(m, d){
         if(d.peak && d.peak.process) document.getElementById('c-topcpu').textContent = d.peak.process.slice(0, 55);
         liveWrap.classList.add('quake');
         document.title = '🚨 CPU ' + cpu + '% · ' + BASE_TITLE;
-        if(alarmOn && Date.now() - lastQuakeSound > 45000){ ensureAudio(); quakeSound(); lastQuakeSound = Date.now(); }
+        if(alarmOn && Date.now() - lastQuakeSound > 45000){ ensureAudio(); quakeAlarm(); lastQuakeSound = Date.now(); }
         if(d.peak && d.peak.captured) prependLiveEvent(cpu, m, d.peak);
     }else{
         banner.style.display = 'none';
