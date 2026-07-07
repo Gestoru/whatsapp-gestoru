@@ -433,6 +433,56 @@ SH;
         ];
     }
 
+    /**
+     * Activa el registro de consultas lentas (slow query log) de MySQL/MariaDB
+     * en caliente y lo deja persistente. Acción explícita de configuración.
+     *
+     * @return array{ok: bool, message: string}
+     */
+    public function enableSlowQueryLog(Server $server, int $longQueryTime = 1): array
+    {
+        $t = (int) $longQueryTime;
+        $script = <<<SH
+if ! command -v mysql >/dev/null 2>&1; then echo "NO_MYSQL"; exit 0; fi
+# Activar en caliente
+HOT=\$(mysql -e "SET GLOBAL slow_query_log='ON'; SET GLOBAL long_query_time={$t};" 2>&1)
+if [ -n "\$HOT" ]; then echo "HOT_ERR:\$HOT"; exit 0; fi
+# Persistir en el drop-in de configuración adecuado
+DIR=""
+for d in /etc/mysql/conf.d /etc/my.cnf.d /etc/mysql/mariadb.conf.d; do [ -d "\$d" ] && DIR="\$d" && break; done
+if [ -n "\$DIR" ]; then
+  printf '[mysqld]\nslow_query_log = 1\nlong_query_time = {$t}\n' > "\$DIR/gestoru-slowlog.cnf" 2>/dev/null && echo "PERSISTED:\$DIR" || echo "PERSIST_FAIL"
+else
+  echo "NO_CONFDIR"
+fi
+# Verificar
+mysql -N -e "SELECT @@slow_query_log" 2>/dev/null
+SH;
+
+        $out = $this->ssh->run($server, $script);
+
+        if (str_contains($out, 'NO_MYSQL')) {
+            return ['ok' => false, 'message' => 'No tiene MySQL/MariaDB instalado (se omite).'];
+        }
+        if (str_contains($out, 'HOT_ERR')) {
+            $err = trim(str_replace('HOT_ERR:', '', strtok($out, "\n")));
+
+            return ['ok' => false, 'message' => 'MySQL rechazó el comando: '.$err];
+        }
+
+        $active    = preg_match('/^\s*1\s*$/m', $out) === 1;
+        $persisted = str_contains($out, 'PERSISTED:');
+
+        if ($active) {
+            $msg = 'Slow log activado';
+            $msg .= $persisted ? ' y hecho permanente.' : ' (activo, pero no pude dejarlo permanente — se pierde al reiniciar MySQL).';
+
+            return ['ok' => true, 'message' => $msg];
+        }
+
+        return ['ok' => false, 'message' => 'No se pudo confirmar la activación.'];
+    }
+
     // ── Scripts remotos ─────────────────────────────────────────────────────
 
     private function analyticsScript(string $logArgs): string

@@ -2,6 +2,11 @@
 @section('title', config('dashboard.title'))
 
 @section('actions')
+    <form method="POST" action="{{ route('dashboard.tools.slowlog') }}" style="display:inline"
+          onsubmit="return confirm('Activar el registro de consultas lentas de MySQL en TODOS los servidores conectados. Es seguro (solo activa un registro). ¿Continuar?')">
+        @csrf
+        <button class="btn btn-sm" title="Activa el slow query log de MySQL en todos los servidores">🐢 Activar slow log (todos)</button>
+    </form>
     <a href="{{ route('dashboard.servers.create') }}" class="btn btn-primary btn-sm">＋ Agregar servidor</a>
 @endsection
 

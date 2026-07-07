@@ -32,6 +32,9 @@ Route::middleware('dashboard.auth')->prefix('panel')->name('dashboard.')->group(
     Route::get('/servidores/{server}/analisis', [DashboardController::class, 'analytics'])->name('servers.analytics');
     Route::get('/servidores/{server}/tendencias', [DashboardController::class, 'trends'])->name('servers.trends');
 
+    // Herramientas de mantenimiento (acciones explícitas)
+    Route::post('/herramientas/slowlog', [DashboardController::class, 'enableSlowLogAll'])->name('tools.slowlog');
+
     // Administración de dominios (registradores y vencimientos)
     Route::get('/dominios', [DomainAdminController::class, 'index'])->name('domains');
     Route::post('/dominios', [DomainAdminController::class, 'store'])->name('domains.store');

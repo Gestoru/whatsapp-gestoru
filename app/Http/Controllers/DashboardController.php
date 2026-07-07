@@ -79,6 +79,27 @@ class DashboardController extends Controller
         return view('dashboard.show', array_merge(['server' => $server], $data));
     }
 
+    /** Activa el slow query log de MySQL en todos los servidores activos. */
+    public function enableSlowLogAll()
+    {
+        $servers = Server::where('is_active', true)->get()
+            ->filter(fn (Server $s) => $s->hasCredentials());
+
+        $lines = [];
+        foreach ($servers as $server) {
+            try {
+                $r = $this->monitor->enableSlowQueryLog($server);
+                $lines[] = ($r['ok'] ? '✅ ' : '⚠️ ').$server->name.': '.$r['message'];
+            } catch (\Throwable $e) {
+                $lines[] = '❌ '.$server->name.': '.$e->getMessage();
+            }
+        }
+
+        $msg = $lines ? implode(' · ', $lines) : 'No hay servidores con credenciales.';
+
+        return redirect()->back()->with('status', $msg);
+    }
+
     /** Histórico de métricas: gráficas de tendencia (Fase 2). */
     public function trends(Request $request, Server $server)
     {
