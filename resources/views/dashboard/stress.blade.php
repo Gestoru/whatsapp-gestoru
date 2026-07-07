@@ -28,18 +28,36 @@
               onsubmit="return confirm('Vas a lanzar tráfico real contra el sitio. ¿Continuar?')">
             @csrf
             <div class="card">
+                @php
+                    // Preferir un dominio real como valor por defecto (no la IP host)
+                    $domainsOnly = array_values(array_filter($targets, fn($t) => ! filter_var($t, FILTER_VALIDATE_IP)));
+                    $default = $result['url'] ?? ('https://'.($domainsOnly[0] ?? ($targets[0] ?? '')));
+                @endphp
+
                 <div class="field">
-                    <label>URL a probar <span class="muted">(un sitio de este servidor)</span></label>
-                    <input name="url" value="{{ old('url', $result['url'] ?? ($targets[0] ?? '' ? 'https://'.($targets[0] ?? '') : '')) }}"
-                           placeholder="https://tudominio.com" required list="targets">
-                    <datalist id="targets">
-                        @foreach($targets as $t)
-                            <option value="https://{{ $t }}"></option>
-                        @endforeach
-                    </datalist>
+                    <label>Dominios de este servidor <span class="muted">({{ count($targets) }}) · clic para elegir</span></label>
                     @if($targets)
-                        <div class="tiny muted" style="margin-top:5px">Permitidos: {{ implode(' · ', $targets) }}</div>
+                        <input type="text" id="dom-search" placeholder="🔎 Buscar dominio…" autocomplete="off" style="margin-bottom:8px">
+                        <div id="dom-list" style="max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:10px;background:#0e1630">
+                            @foreach($targets as $t)
+                                @php($isIp = filter_var($t, FILTER_VALIDATE_IP))
+                                <div class="dom-item" data-url="https://{{ $t }}" data-name="{{ strtolower($t) }}"
+                                     style="display:flex;align-items:center;gap:10px;padding:9px 13px;cursor:pointer;border-bottom:1px solid #1a2340;font-size:14px">
+                                    <span>{{ $isIp ? '🖥️' : '🌐' }}</span>
+                                    <span style="font-family:ui-monospace,monospace">{{ $t }}</span>
+                                    <span class="muted tiny" style="margin-left:auto">{{ $isIp ? 'host' : 'dominio' }}</span>
+                                </div>
+                            @endforeach
+                        </div>
+                        <div id="dom-empty" class="muted tiny" style="display:none;padding:10px">Sin coincidencias.</div>
+                    @else
+                        <div class="muted tiny">No se detectaron dominios (revisa la conexión del servidor).</div>
                     @endif
+                </div>
+
+                <div class="field">
+                    <label>URL a probar <span class="muted">(puedes ajustar la ruta, ej. /login)</span></label>
+                    <input name="url" id="url-input" value="{{ old('url', $default) }}" placeholder="https://tudominio.com" required>
                 </div>
                 <div class="form-grid">
                     <div class="field">
@@ -100,8 +118,41 @@
 @endsection
 
 @push('scripts')
+<style>
+    .dom-item:hover{background:var(--card2)}
+    .dom-item.active{background:#1e2b52;box-shadow:inset 3px 0 0 var(--accent)}
+</style>
 <script>
-document.querySelector('form')?.addEventListener('submit', e => {
+// Selección por clic
+const urlInput = document.getElementById('url-input');
+function markActive(){
+    const v = (urlInput?.value || '').replace(/\/+$/,'');
+    document.querySelectorAll('.dom-item').forEach(it => {
+        it.classList.toggle('active', it.dataset.url.replace(/\/+$/,'') === v);
+    });
+}
+document.querySelectorAll('.dom-item').forEach(it => {
+    it.addEventListener('click', () => { urlInput.value = it.dataset.url; markActive(); urlInput.focus(); });
+});
+urlInput?.addEventListener('input', markActive);
+markActive();
+
+// Buscador
+const search = document.getElementById('dom-search');
+search?.addEventListener('input', () => {
+    const q = search.value.toLowerCase().trim();
+    let shown = 0;
+    document.querySelectorAll('.dom-item').forEach(it => {
+        const match = it.dataset.name.includes(q);
+        it.style.display = match ? '' : 'none';
+        if (match) shown++;
+    });
+    const empty = document.getElementById('dom-empty');
+    if (empty) empty.style.display = shown === 0 ? 'block' : 'none';
+});
+
+// Estado del botón al enviar
+document.querySelector('form')?.addEventListener('submit', () => {
     const b = document.getElementById('run-btn');
     if (b) { b.disabled = true; b.innerHTML = '<span class="spin"></span> Probando… (espera el resultado)'; }
 });
