@@ -48,6 +48,8 @@ Route::middleware('dashboard.auth')->prefix('panel')->name('dashboard.')->group(
     Route::get('/dominios', [DomainAdminController::class, 'index'])->name('domains');
     Route::post('/dominios', [DomainAdminController::class, 'store'])->name('domains.store');
     Route::post('/dominios/escanear', [DomainAdminController::class, 'scan'])->name('domains.scan');
+    Route::post('/dominios/godaddy/conectar', [DomainAdminController::class, 'connectGoDaddy'])->name('domains.godaddy.connect');
+    Route::post('/dominios/godaddy/sincronizar', [DomainAdminController::class, 'syncGoDaddy'])->name('domains.godaddy.sync');
     Route::post('/dominios/{domain}/whois', [DomainAdminController::class, 'whois'])->name('domains.whois');
     Route::get('/dominios/{domain}/editar', [DomainAdminController::class, 'edit'])->name('domains.edit');
     Route::put('/dominios/{domain}', [DomainAdminController::class, 'update'])->name('domains.update');

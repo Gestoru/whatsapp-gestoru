@@ -8,6 +8,7 @@ class Domain extends Model
 {
     protected $fillable = [
         'name', 'registrar', 'expires_at', 'renewal_url', 'notes', 'source', 'whois_checked_at',
+        'status', 'auto_renew', 'synced_at',
     ];
 
     protected function casts(): array
@@ -15,7 +16,38 @@ class Domain extends Model
         return [
             'expires_at'       => 'date',
             'whois_checked_at' => 'datetime',
+            'synced_at'        => 'datetime',
+            'auto_renew'       => 'boolean',
         ];
+    }
+
+    /** Etiqueta legible del estado del dominio. */
+    public function getStatusLabelAttribute(): ?string
+    {
+        if (! $this->status) {
+            return null;
+        }
+
+        return match (strtoupper($this->status)) {
+            'ACTIVE'                 => 'Activo',
+            'EXPIRED'                => 'Vencido',
+            'CANCELLED', 'CANCELED'  => 'Cancelado',
+            'PENDING', 'AWAITING_*'  => 'Pendiente',
+            'SUSPENDED'              => 'Suspendido',
+            'TRANSFERRED_OUT'        => 'Transferido',
+            default                  => ucfirst(strtolower(str_replace('_', ' ', $this->status))),
+        };
+    }
+
+    /** ok | warn | bad según el estado. */
+    public function statusTone(): string
+    {
+        return match (strtoupper((string) $this->status)) {
+            'ACTIVE'                          => 'ok',
+            'EXPIRED', 'SUSPENDED', 'CANCELLED', 'CANCELED' => 'bad',
+            ''                                => 'muted',
+            default                           => 'warn',
+        };
     }
 
     /** Días restantes hasta el vencimiento (negativo si ya venció). */

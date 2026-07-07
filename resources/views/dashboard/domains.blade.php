@@ -3,6 +3,13 @@
 @section('subtitle', 'registradores y vencimientos')
 
 @section('actions')
+    @if($godaddyConfigured)
+        <form method="POST" action="{{ route('dashboard.domains.godaddy.sync') }}" style="display:inline">
+            @csrf
+            <button class="btn btn-sm" title="Trae el estado de todos tus dominios GoDaddy">🔄 Sincronizar GoDaddy</button>
+        </form>
+    @endif
+    <button class="btn btn-sm" onclick="document.getElementById('godaddy-box').classList.toggle('hidden')">🐦 GoDaddy</button>
     <form method="POST" action="{{ route('dashboard.domains.scan') }}" style="display:inline">
         @csrf
         <button class="btn btn-sm" title="Busca dominios y subdominios en todos los servidores">🔍 Escanear servidores</button>
@@ -14,6 +21,42 @@
     @if($errors->any())
         <div class="alert alert-bad">{{ $errors->first() }}</div>
     @endif
+
+    {{-- Conexión con GoDaddy --}}
+    <div id="godaddy-box" class="card hidden" style="margin-bottom:16px">
+        <h2 style="font-size:15px;margin:0 0 6px">🐦 Conectar con GoDaddy</h2>
+        <p class="muted tiny" style="margin:0 0 12px">
+            Trae automáticamente el estado, vencimiento y auto-renovación de todos tus dominios de GoDaddy.
+            @if($godaddyConfigured)
+                <span style="color:var(--ok)">✔ Conectado.</span>
+                @if($godaddyLastSync) Última sincronización: {{ \Carbon\Carbon::parse($godaddyLastSync)->diffForHumans() }}. @endif
+            @endif
+        </p>
+
+        <div class="alert" style="background:#101a33;border-color:var(--line);color:var(--muted)">
+            <strong style="color:var(--text)">Cómo obtener tus llaves (1 minuto):</strong>
+            <ol style="margin:8px 0 0 18px;padding:0">
+                <li>Entra a <span style="font-family:ui-monospace,monospace">developer.godaddy.com/keys</span> (inicia sesión con tu cuenta GoDaddy).</li>
+                <li>Crea una API Key de <strong style="color:var(--text)">Producción</strong> ("Production").</li>
+                <li>Copia la <strong style="color:var(--text)">Key</strong> y el <strong style="color:var(--text)">Secret</strong> y pégalos aquí abajo.</li>
+            </ol>
+        </div>
+
+        <form method="POST" action="{{ route('dashboard.domains.godaddy.connect') }}">
+            @csrf
+            <div class="form-grid">
+                <div class="field"><label>API Key</label><input name="godaddy_api_key" value="{{ $godaddyKey }}" placeholder="dLD..." required></div>
+                <div class="field"><label>API Secret @if($godaddyConfigured)<span class="muted">(vacío = no cambiar)</span>@endif</label><input name="godaddy_api_secret" type="password" autocomplete="new-password" placeholder="••••••••"></div>
+            </div>
+            <div class="row" style="justify-content:flex-end;gap:8px">
+                <button class="btn btn-primary btn-sm">Guardar credenciales</button>
+                @if($godaddyConfigured)
+                    <button formaction="{{ route('dashboard.domains.godaddy.sync') }}" class="btn btn-sm">🔄 Sincronizar ahora</button>
+                @endif
+            </div>
+        </form>
+        <p class="muted tiny" style="margin-top:8px">🔒 El secreto se guarda cifrado. Los dominios se sincronizan solos cada pocas horas.</p>
+    </div>
 
     {{-- Resumen --}}
     <div class="stat-grid" style="margin-bottom:16px">
@@ -54,16 +97,29 @@
     @else
         <div class="list-card">
             <table>
-                <thead><tr><th>Dominio</th><th>Registrador</th><th>Vence</th><th>Estado</th><th>Subdominios</th><th></th></tr></thead>
+                <thead><tr><th>Dominio</th><th>Registrador</th><th>Estado</th><th>Auto-renueva</th><th>Vence</th><th>Vencimiento</th><th>Subdominios</th><th></th></tr></thead>
                 <tbody>
                 @foreach($domains as $domain)
                     @php($lvl = $domain->expiryLevel())
                     @php($days = $domain->daysLeft())
                     @php($tone = ['due'=>'#fca5a5','warn'=>'#fcd34d','ok'=>'#86efac','unknown'=>'var(--muted)'][$lvl])
+                    @php($stTone = ['ok'=>'#86efac','warn'=>'#fcd34d','bad'=>'#fca5a5','muted'=>'var(--muted)'][$domain->statusTone()])
                     @php($subs = $grouped[$domain->name] ?? [])
                     <tr>
                         <td style="font-weight:700">🌐 {{ $domain->name }}</td>
                         <td><span class="pill tiny">{{ $domain->registrar_label }}</span></td>
+                        <td>
+                            @if($domain->status_label)
+                                <span style="color:{{ $stTone }};font-weight:600">{{ $domain->status_label }}</span>
+                            @else
+                                <span class="muted tiny">—</span>
+                            @endif
+                        </td>
+                        <td>
+                            @if($domain->auto_renew === true)<span style="color:var(--ok)">✔ sí</span>
+                            @elseif($domain->auto_renew === false)<span style="color:var(--warn)">✘ no</span>
+                            @else<span class="muted tiny">—</span>@endif
+                        </td>
                         <td>{{ $domain->expires_at ? $domain->expires_at->format('d/m/Y') : '—' }}</td>
                         <td>
                             <span style="color:{{ $tone }};font-weight:600">
@@ -95,7 +151,7 @@
                     </tr>
                     @if(count($subs))
                         <tr id="subs-{{ $domain->id }}" class="hidden">
-                            <td colspan="6" style="background:#0e1630">
+                            <td colspan="8" style="background:#0e1630">
                                 <div style="padding:4px 6px">
                                     @foreach($subs as $h)
                                         <div class="row" style="justify-content:space-between;padding:5px 8px;border-bottom:1px solid #1a2340">

@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\Domain;
 use App\Models\Hostname;
 use App\Models\Server;
+use App\Models\Setting;
 use App\Services\DomainInspector;
+use App\Services\GoDaddyService;
 use App\Services\ServerMonitor;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -15,7 +17,34 @@ class DomainAdminController extends Controller
     public function __construct(
         private ServerMonitor $monitor,
         private DomainInspector $inspector,
+        private GoDaddyService $godaddy,
     ) {}
+
+    /** Guarda las credenciales de la API de GoDaddy. */
+    public function connectGoDaddy(Request $request)
+    {
+        $data = $request->validate([
+            'godaddy_api_key'    => 'required|string|max:200',
+            'godaddy_api_secret' => 'nullable|string|max:200',
+        ]);
+
+        GoDaddyService::saveCredentials($data['godaddy_api_key'], $data['godaddy_api_secret'] ?? null);
+
+        return redirect()->route('dashboard.domains')->with('status', 'Credenciales de GoDaddy guardadas. Ahora presiona «Sincronizar GoDaddy».');
+    }
+
+    /** Trae todos los dominios de GoDaddy con su estado. */
+    public function syncGoDaddy()
+    {
+        $r = app(GoDaddyService::class)->syncToDatabase();
+
+        if ($r['ok']) {
+            return redirect()->route('dashboard.domains')
+                ->with('status', "✅ GoDaddy sincronizado: {$r['total']} dominios ({$r['created']} nuevos, {$r['updated']} actualizados).");
+        }
+
+        return redirect()->route('dashboard.domains')->with('error', 'GoDaddy: '.$r['error']);
+    }
 
     /** Dashboard de dominios: agrupados con sus subdominios colapsables. */
     public function index()
@@ -40,9 +69,12 @@ class DomainAdminController extends Controller
         ];
 
         return view('dashboard.domains', [
-            'domains' => $domains,
-            'grouped' => $grouped,
-            'stats'   => $stats,
+            'domains'            => $domains,
+            'grouped'            => $grouped,
+            'stats'              => $stats,
+            'godaddyConfigured'  => $this->godaddy->configured(),
+            'godaddyKey'         => Setting::get('godaddy_api_key'),
+            'godaddyLastSync'    => Domain::where('registrar', 'godaddy')->max('synced_at'),
         ]);
     }
 
