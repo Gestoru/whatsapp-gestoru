@@ -55,11 +55,16 @@ class DashboardController extends Controller
             ->groupBy('server_id')
             ->map->first();
 
+        // El botón de sincronizar Contabo solo aparece en el head cuando hace
+        // falta: credenciales cargadas pero datos nunca traídos o desactualizados
+        // (>12 h). Si todo está al día, el head queda limpio; la conexión vive
+        // en el módulo de Configuración.
         $contaboConfigured = app(\App\Services\ContaboService::class)->configured();
-        $contaboClientId   = \App\Models\Setting::get('contabo_client_id');
-        $contaboApiUser    = \App\Models\Setting::get('contabo_api_user');
+        $contaboLastSync   = $servers->max('provider_synced_at');
+        $contaboNeedsSync  = $contaboConfigured
+            && ($contaboLastSync === null || \Illuminate\Support\Carbon::parse($contaboLastSync)->lt(now()->subHours(12)));
 
-        return view('dashboard.index', compact('servers', 'latest', 'contaboConfigured', 'contaboClientId', 'contaboApiUser'));
+        return view('dashboard.index', compact('servers', 'latest', 'contaboConfigured', 'contaboNeedsSync'));
     }
 
     /** Detalle de un servidor: métricas + proyectos + dominios. */

@@ -3,13 +3,17 @@
 @section('subtitle', 'registradores y vencimientos')
 
 @section('actions')
-    @if($godaddyConfigured)
+    {{-- Solo aparece cuando GoDaddy está conectado pero sus datos están sin traer
+         o desactualizados. La conexión se gestiona en Configuración. --}}
+    @if($godaddyNeedsSync)
         <form method="POST" action="{{ route('dashboard.domains.godaddy.sync') }}" style="display:inline">
             @csrf
-            <button class="btn btn-sm" title="Trae el estado de todos tus dominios GoDaddy">🔄 Sincronizar GoDaddy</button>
+            <button class="btn btn-sm" title="Los estados de tus dominios GoDaddy están desactualizados. Traerlos ahora.">
+                <span class="dot" style="background:var(--warn);box-shadow:0 0 8px var(--warn)"></span>
+                Sincronizar GoDaddy
+            </button>
         </form>
     @endif
-    <a href="{{ route('dashboard.config') }}#godaddy" class="btn btn-sm" title="Conectar o gestionar GoDaddy en Configuración">🐦 GoDaddy</a>
     <form method="POST" action="{{ route('dashboard.domains.scan') }}" style="display:inline">
         @csrf
         <button class="btn btn-sm" title="Busca dominios y subdominios en todos los servidores">🔍 Escanear servidores</button>

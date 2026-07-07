@@ -2,13 +2,17 @@
 @section('title', config('dashboard.title'))
 
 @section('actions')
-    @if($contaboConfigured)
+    {{-- Solo aparece cuando Contabo está conectado pero sus datos están sin traer
+         o desactualizados. La conexión se gestiona en Configuración. --}}
+    @if($contaboNeedsSync)
         <form method="POST" action="{{ route('dashboard.contabo.sync') }}" style="display:inline">
             @csrf
-            <button class="btn btn-sm" title="Trae estado y plan de tus VPS Contabo">🔄 Sincronizar Contabo</button>
+            <button class="btn btn-sm" title="Los datos de tus VPS Contabo están desactualizados. Traerlos ahora.">
+                <span class="dot" style="background:var(--warn);box-shadow:0 0 8px var(--warn)"></span>
+                Sincronizar Contabo
+            </button>
         </form>
     @endif
-    <a href="{{ route('dashboard.config') }}#contabo" class="btn btn-sm" title="Conectar o gestionar Contabo en Configuración">🟠 Contabo</a>
     <form method="POST" action="{{ route('dashboard.tools.slowlog') }}" style="display:inline"
           onsubmit="return confirm('Activar el registro de consultas lentas de MySQL en TODOS los servidores conectados. Es seguro (solo activa un registro). ¿Continuar?')">
         @csrf

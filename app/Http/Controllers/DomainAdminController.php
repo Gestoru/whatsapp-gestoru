@@ -71,13 +71,22 @@ class DomainAdminController extends Controller
             'inactive' => $domains->filter(fn ($d) => ! $d->is_active)->count(),
         ];
 
+        // El botón «Sincronizar GoDaddy» solo se muestra en el head cuando hace
+        // falta (conectado pero sin datos o desactualizado >12 h). La conexión
+        // vive en el módulo de Configuración.
+        $godaddyConfigured = $this->godaddy->configured();
+        $godaddyLastSync   = Domain::where('registrar', 'godaddy')->max('synced_at');
+        $godaddyNeedsSync  = $godaddyConfigured
+            && ($godaddyLastSync === null || \Illuminate\Support\Carbon::parse($godaddyLastSync)->lt(now()->subHours(12)));
+
         return view('dashboard.domains', [
             'domains'            => $domains,
             'grouped'            => $grouped,
             'stats'              => $stats,
-            'godaddyConfigured'  => $this->godaddy->configured(),
+            'godaddyConfigured'  => $godaddyConfigured,
+            'godaddyNeedsSync'   => $godaddyNeedsSync,
             'godaddyKey'         => Setting::get('godaddy_api_key'),
-            'godaddyLastSync'    => Domain::where('registrar', 'godaddy')->max('synced_at'),
+            'godaddyLastSync'    => $godaddyLastSync,
         ]);
     }
 
