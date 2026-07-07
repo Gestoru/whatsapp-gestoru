@@ -69,6 +69,9 @@
         border-radius:12px;padding:10px 14px;margin:12px 0 0;font-weight:700;font-size:14px;position:relative;z-index:2;
         animation:critblink 1.1s ease-in-out infinite;flex-wrap:wrap}
     @keyframes critblink{50%{background:#57121f;box-shadow:0 0 18px #ff4d6d55}}
+    /* Tooltip interactivo de las gráficas: el dato sale con solo pasar el mouse */
+    .trend-chart{cursor:crosshair;touch-action:none}
+    .trend-chart circle[fill="transparent"]{pointer-events:none}
 </style>
 @endpush
 
@@ -147,7 +150,7 @@
             <h2><span class="section-ic" style="background:{{ $color }}22;border-color:{{ $color }}66;color:{{ $color }}">{{ $ic }}</span>
                 {{ $label }} <span class="muted tiny" style="font-weight:400">· en el rango</span></h2>
             <div class="card" style="padding:12px;background:linear-gradient(180deg,#111a34,#0b1226)">
-                <svg viewBox="0 0 {{ $W }} {{ $H }}" preserveAspectRatio="none" style="width:100%;height:170px;display:block">
+                <svg class="trend-chart" viewBox="0 0 {{ $W }} {{ $H }}" preserveAspectRatio="none" style="width:100%;height:170px;display:block">
                     <defs>
                         <linearGradient id="grad-{{ $key }}" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="0%" stop-color="{{ $color }}" stop-opacity="0.35"/>
@@ -189,7 +192,7 @@
                         <span style="font-weight:600;font-size:14px;color:{{ $mc['color'] }}">{{ $mc['label'] }}</span>
                         <span class="muted tiny">máx en rango: {{ $mc['max'] }}</span>
                     </div>
-                    <svg viewBox="0 0 {{ $W }} 120" preserveAspectRatio="none" style="width:100%;height:110px;display:block">
+                    <svg class="trend-chart" viewBox="0 0 {{ $W }} 120" preserveAspectRatio="none" style="width:100%;height:110px;display:block">
                         <defs><linearGradient id="mg-{{ $mc['key'] }}" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="0%" stop-color="{{ $mc['color'] }}" stop-opacity="0.35"/><stop offset="100%" stop-color="{{ $mc['color'] }}" stop-opacity="0"/>
                         </linearGradient></defs>
@@ -374,6 +377,59 @@ function handleCritical(m, d){
     }
     critActive = crit;
 }
+
+// ═══ TOOLTIP INTERACTIVO EN LAS GRÁFICAS ═══
+// Mueve el mouse (o el dedo) por cualquier parte de la gráfica y una guía
+// muestra el valor y la hora del punto más cercano.
+const chartTip = document.createElement('div');
+chartTip.style.cssText = 'position:fixed;display:none;z-index:99;background:#0e1836;border:1px solid #3b4a76;'
+    + 'border-radius:8px;padding:6px 10px;font:600 12px ui-monospace,monospace;color:#e7ecf6;'
+    + 'pointer-events:none;box-shadow:0 6px 18px #000a;white-space:nowrap';
+document.body.appendChild(chartTip);
+const SVGNS = 'http://www.w3.org/2000/svg';
+
+document.querySelectorAll('svg.trend-chart').forEach(svg => {
+    const pts = [...svg.querySelectorAll('circle[fill="transparent"]')].map(c => ({
+        x: +c.getAttribute('cx'),
+        y: +c.getAttribute('cy'),
+        txt: (c.querySelector('title') || {}).textContent || ''
+    }));
+    if(!pts.length) return;
+
+    const color = svg.querySelector('polyline')?.getAttribute('stroke') || '#7dd3fc';
+    const vb = svg.viewBox.baseVal;
+
+    const guide = document.createElementNS(SVGNS, 'line');
+    guide.setAttribute('stroke', color); guide.setAttribute('stroke-width', '1');
+    guide.setAttribute('stroke-dasharray', '4 4'); guide.setAttribute('opacity', '.7');
+    guide.setAttribute('y1', 0); guide.setAttribute('y2', vb.height);
+    guide.style.display = 'none'; svg.appendChild(guide);
+
+    const dot = document.createElementNS(SVGNS, 'circle');
+    dot.setAttribute('r', '4.5'); dot.setAttribute('fill', '#fff');
+    dot.setAttribute('stroke', color); dot.setAttribute('stroke-width', '2');
+    dot.style.display = 'none'; svg.appendChild(dot);
+
+    svg.addEventListener('pointermove', ev => {
+        const r = svg.getBoundingClientRect();
+        const x = (ev.clientX - r.left) / r.width * vb.width;
+        let best = pts[0];
+        for(const p of pts) if(Math.abs(p.x - x) < Math.abs(best.x - x)) best = p;
+
+        guide.setAttribute('x1', best.x); guide.setAttribute('x2', best.x); guide.style.display = '';
+        dot.setAttribute('cx', best.x); dot.setAttribute('cy', best.y); dot.style.display = '';
+
+        chartTip.textContent = best.txt;
+        chartTip.style.display = 'block';
+        let lx = ev.clientX + 14;
+        if(lx + chartTip.offsetWidth > window.innerWidth - 8) lx = ev.clientX - chartTip.offsetWidth - 14;
+        chartTip.style.left = lx + 'px';
+        chartTip.style.top = (ev.clientY - 14) + 'px';
+    });
+    svg.addEventListener('pointerleave', () => {
+        guide.style.display = 'none'; dot.style.display = 'none'; chartTip.style.display = 'none';
+    });
+});
 
 // Inserta el pico recién capturado en el reporte, sin recargar la página
 function prependLiveEvent(cpu, m, peak){
