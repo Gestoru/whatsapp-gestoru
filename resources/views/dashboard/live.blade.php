@@ -54,23 +54,21 @@
                 <div id="diag" class="hidden" style="margin-top:12px">
                     <div class="stat-grid">
                         <div class="stat"><div class="k">ss (sockets host)</div><div class="v" style="font-size:17px">{{ $diag['ss_count'] }}</div></div>
-                        <div class="stat"><div class="k">conntrack (NAT/Docker)</div><div class="v" style="font-size:17px">{{ $diag['ct_count'] }}</div></div>
-                        <div class="stat"><div class="k">Flujos conntrack totales</div><div class="v" style="font-size:17px">{{ $diag['ct_lines'] }}</div></div>
-                        <div class="stat"><div class="k">Docker presente</div><div class="v" style="font-size:15px">{{ $diag['docker'] ? 'sí' : 'no' }}</div></div>
+                        <div class="stat"><div class="k">conntrack (NAT)</div><div class="v" style="font-size:17px">{{ $diag['ct_count'] }}</div></div>
+                        <div class="stat"><div class="k">nsenter (dentro de Docker)</div><div class="v" style="font-size:17px">{{ $diag['ns_count'] ?? 0 }}</div></div>
+                        <div class="stat"><div class="k">Contenedores</div><div class="v" style="font-size:17px">{{ $diag['containers'] ?? 0 }}</div></div>
+                        <div class="stat"><div class="k">conntrack / nsenter</div><div class="v" style="font-size:15px">{{ ($diag['ct_file']||$diag['ct_bin']) ? 'sí' : 'no' }} / {{ ($diag['nsenter'] ?? false) ? 'sí' : 'no' }}</div></div>
                     </div>
-                    @if(! $diag['ct_file'] && ! $diag['ct_bin'])
+                    @php($cont = $diag['containers'] ?? 0)
+                    @if($cont > 0 && ! ($diag['nsenter'] ?? false) && ! $diag['ct_file'] && ! $diag['ct_bin'])
                         <div class="alert" style="margin:12px 0 0;background:#2e2410;border-color:#6b5316;color:#fcd34d">
-                            ⚠️ No se puede leer la tabla <code>conntrack</code> del kernel (ni el archivo <code>/proc/net/nf_conntrack</code> ni el binario <code>conntrack</code>).
-                            @if($diag['docker'])
-                                Como este servidor usa <strong>Docker con NAT</strong>, las conexiones a los contenedores no se ven sin conntrack. El instalador ya intenta añadir <code>conntrack</code>; si persiste, en el servidor: <code>sudo apt-get install -y conntrack</code>.
-                            @endif
-                        </div>
-                    @elseif($diag['ct_lines'] === 0 && $diag['docker'])
-                        <div class="alert" style="margin:12px 0 0;background:#101a33;border-color:var(--line);color:var(--muted)">
-                            La tabla conntrack está vacía o el módulo del kernel no está activo. Prueba en el servidor: <code>sudo modprobe nf_conntrack</code>.
+                            ⚠️ Servidor con Docker, pero sin <code>conntrack</code> ni <code>nsenter</code> para ver dentro de los contenedores. En el servidor: <code>sudo apt-get install -y conntrack util-linux</code>.
                         </div>
                     @else
-                        <p class="muted tiny" style="margin:12px 0 0">Las fuentes responden pero no hubo tráfico web externo en la ventana de medición. Si esperabas visitas, refresca en unos segundos.</p>
+                        <p class="muted tiny" style="margin:12px 0 0">
+                            Las fuentes están operativas ({{ $diag['ss_count'] }} por host · {{ $diag['ct_count'] }} por conntrack · {{ $diag['ns_count'] ?? 0 }} dentro de Docker).
+                            Si el total es 0, es que no hubo tráfico web externo en la ventana de ~1 min. Refresca en unos segundos.
+                        </p>
                     @endif
                 </div>
             </div>

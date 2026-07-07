@@ -88,21 +88,35 @@ class ServerMonitor
         // del propio servidor. Se emite además un bloque de diagnóstico.
         $script = <<<'SH'
 LIPS=$(hostname -I 2>/dev/null)
+webflt(){ awk -v L="$LIPS" 'BEGIN{n=split(L,A," ");for(i=1;i<=n;i++)loc[A[i]]=1}{ip=$1; if(ip=="")next; if(ip in loc)next; if(ip ~ /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)/)next; if(ip ~ /^(::1|::ffff:127|fe80|fd)/)next; print ip}'; }
 echo "==SS=="
-ss -tan state established state time-wait 2>/dev/null | awk 'NR>1{loc=$(NF-1); if(loc ~ /:(80|443)$/){ip=$NF; sub(/:[0-9]+$/,"",ip); gsub(/[][]/,"",ip); print ip}}' | awk -v L="$LIPS" 'BEGIN{n=split(L,A," ");for(i=1;i<=n;i++)loc[A[i]]=1}{ip=$1; if(ip=="")next; if(ip in loc)next; if(ip ~ /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)/)next; if(ip ~ /^(::1|::ffff:127|fe80|fd)/)next; print ip}'
+ss -tan state established state time-wait 2>/dev/null | awk 'NR>1{loc=$(NF-1); if(loc ~ /:(80|443)$/){ip=$NF; sub(/:[0-9]+$/,"",ip); gsub(/[][]/,"",ip); print ip}}' | webflt
 echo "==CT=="
-(cat /proc/net/nf_conntrack 2>/dev/null || cat /proc/net/ip_conntrack 2>/dev/null || conntrack -L -p tcp 2>/dev/null) | awk '/ESTABLISHED|TIME_WAIT/{o="";d="";for(i=1;i<=NF;i++){if(o==""&&$i~/^src=/)o=substr($i,5);if(d==""&&$i~/^dport=/)d=substr($i,7)};if((d=="80"||d=="443")&&o!="")print o}' | awk -v L="$LIPS" 'BEGIN{n=split(L,A," ");for(i=1;i<=n;i++)loc[A[i]]=1}{ip=$1; if(ip=="")next; if(ip in loc)next; if(ip ~ /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)/)next; if(ip ~ /^(::1|::ffff:127|fe80|fd)/)next; print ip}'
+(cat /proc/net/nf_conntrack 2>/dev/null || cat /proc/net/ip_conntrack 2>/dev/null || conntrack -L -p tcp 2>/dev/null) | awk '/ESTABLISHED|TIME_WAIT/{o="";d="";for(i=1;i<=NF;i++){if(o==""&&$i~/^src=/)o=substr($i,5);if(d==""&&$i~/^dport=/)d=substr($i,7)};if((d=="80"||d=="443")&&o!="")print o}' | webflt
+echo "==NS=="
+if command -v docker >/dev/null 2>&1 && command -v nsenter >/dev/null 2>&1; then
+  for pid in $(docker ps -q 2>/dev/null | xargs -r -I{} docker inspect -f '{{.State.Pid}}' {} 2>/dev/null); do
+    [ "$pid" = "0" ] && continue
+    nsenter -t "$pid" -n ss -H -tan state established state time-wait 2>/dev/null
+  done | awk '{lp=$(NF-1); pr=$NF; nn=split(lp,LA,":"); lport=LA[nn]+0; mm=split(pr,PA,":"); pport=PA[mm]+0; peer=pr; sub(/:[0-9]+$/,"",peer); gsub(/[][]/,"",peer); if(peer!="" && lport>0 && pport>0 && lport<pport) print peer}' | webflt
+fi
 echo "==DIAG=="
 echo "ct_file=$([ -r /proc/net/nf_conntrack ] && echo 1 || echo 0)"
 echo "ct_bin=$(command -v conntrack >/dev/null 2>&1 && echo 1 || echo 0)"
 echo "docker=$(command -v docker >/dev/null 2>&1 && echo 1 || echo 0)"
+echo "nsenter=$(command -v nsenter >/dev/null 2>&1 && echo 1 || echo 0)"
+echo "containers=$(docker ps -q 2>/dev/null | wc -l | tr -d ' ')"
 echo "ct_lines=$( { cat /proc/net/nf_conntrack 2>/dev/null || conntrack -L -p tcp 2>/dev/null; } | grep -c . )"
 SH;
         $raw = $this->cachedRun($server, 'livevisitors', 10, $script);
         $sec = $this->splitSections($raw);
 
         $counts = [];
-        foreach (array_merge($this->nonEmptyLines($sec['SS'] ?? ''), $this->nonEmptyLines($sec['CT'] ?? '')) as $ip) {
+        foreach (array_merge(
+            $this->nonEmptyLines($sec['SS'] ?? ''),
+            $this->nonEmptyLines($sec['CT'] ?? ''),
+            $this->nonEmptyLines($sec['NS'] ?? '')
+        ) as $ip) {
             $ip = trim($ip);
             if ($ip !== '') {
                 $counts[$ip] = ($counts[$ip] ?? 0) + 1;
@@ -120,12 +134,15 @@ SH;
         return [
             'visitors' => $visitors,
             'diag' => [
-                'ct_file'  => ($d['ct_file'] ?? '0') === '1',
-                'ct_bin'   => ($d['ct_bin'] ?? '0') === '1',
-                'docker'   => ($d['docker'] ?? '0') === '1',
-                'ct_lines' => (int) ($d['ct_lines'] ?? 0),
-                'ss_count' => count($this->nonEmptyLines($sec['SS'] ?? '')),
-                'ct_count' => count($this->nonEmptyLines($sec['CT'] ?? '')),
+                'ct_file'    => ($d['ct_file'] ?? '0') === '1',
+                'ct_bin'     => ($d['ct_bin'] ?? '0') === '1',
+                'docker'     => ($d['docker'] ?? '0') === '1',
+                'nsenter'    => ($d['nsenter'] ?? '0') === '1',
+                'containers' => (int) ($d['containers'] ?? 0),
+                'ct_lines'   => (int) ($d['ct_lines'] ?? 0),
+                'ss_count'   => count($this->nonEmptyLines($sec['SS'] ?? '')),
+                'ct_count'   => count($this->nonEmptyLines($sec['CT'] ?? '')),
+                'ns_count'   => count($this->nonEmptyLines($sec['NS'] ?? '')),
             ],
         ];
     }
@@ -975,16 +992,23 @@ ma=$(awk '/MemAvailable/{print $2*1024}' /proc/meminfo 2>/dev/null)
 echo "MEM_TOTAL=$mt"
 echo "MEM_AVAIL=$ma"
 df -P -B1 / 2>/dev/null | awk 'NR==2{print "DISK_TOTAL="$2"\nDISK_USED="$3}'
-# Usuarios web activos: une sockets del host (ss) + tabla conntrack del kernel
-# (ve flujos NAT hacia contenedores Docker que ss no muestra). Dedup por
-# ip:puerto, excluye IPs privadas y las propias del servidor.
+# Usuarios web activos: 3 fuentes — ss (host) + conntrack (NAT) + nsenter en
+# cada contenedor (ve clientes DENTRO de Docker aunque no haya conntrack).
+# Excluye IPs privadas/internas y las propias del servidor.
 LIPS=$(hostname -I 2>/dev/null)
-WPAIRS=$({
-ss -tan state established state time-wait 2>/dev/null | awk 'NR>1{loc=$(NF-1); if(loc ~ /:(80|443)$/){ip=$NF; sub(/:[0-9]+$/,"",ip); gsub(/[][]/,"",ip); p=$NF; sub(/^.*:/,"",p); print ip" "p}}'
-(cat /proc/net/nf_conntrack 2>/dev/null || cat /proc/net/ip_conntrack 2>/dev/null || conntrack -L -p tcp 2>/dev/null) | awk '/ESTABLISHED|TIME_WAIT/{o="";d="";s="";for(i=1;i<=NF;i++){if(o==""&&$i~/^src=/)o=substr($i,5);if(d==""&&$i~/^dport=/)d=substr($i,7);if(s==""&&$i~/^sport=/)s=substr($i,7)};if((d=="80"||d=="443")&&o!="")print o" "s}'
-} | sort -u | awk -v L="$LIPS" 'BEGIN{n=split(L,A," ");for(i=1;i<=n;i++)loc[A[i]]=1}{ip=$1; if(ip=="") next; if(ip in loc) next; if(ip ~ /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)/) next; if(ip ~ /^(::1|::ffff:127|fe80|fd)/) next; print}')
-echo "WEB_CONNS=$(printf '%s\n' "$WPAIRS" | grep -c .)"
-echo "WEB_USERS=$(printf '%s\n' "$WPAIRS" | awk '{print $1}' | sort -u | grep -c .)"
+webflt(){ awk -v L="$LIPS" 'BEGIN{n=split(L,A," ");for(i=1;i<=n;i++)loc[A[i]]=1}{ip=$1; if(ip=="")next; if(ip in loc)next; if(ip ~ /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)/)next; if(ip ~ /^(::1|::ffff:127|fe80|fd)/)next; print ip}'; }
+WU=$({
+ss -tan state established state time-wait 2>/dev/null | awk 'NR>1{loc=$(NF-1); if(loc ~ /:(80|443)$/){ip=$NF; sub(/:[0-9]+$/,"",ip); gsub(/[][]/,"",ip); print ip}}'
+(cat /proc/net/nf_conntrack 2>/dev/null || cat /proc/net/ip_conntrack 2>/dev/null || conntrack -L -p tcp 2>/dev/null) | awk '/ESTABLISHED|TIME_WAIT/{o="";d="";for(i=1;i<=NF;i++){if(o==""&&$i~/^src=/)o=substr($i,5);if(d==""&&$i~/^dport=/)d=substr($i,7)};if((d=="80"||d=="443")&&o!="")print o}'
+if command -v docker >/dev/null 2>&1 && command -v nsenter >/dev/null 2>&1; then
+  for pid in $(docker ps -q 2>/dev/null | xargs -r -I{} docker inspect -f '{{.State.Pid}}' {} 2>/dev/null); do
+    [ "$pid" = "0" ] && continue
+    nsenter -t "$pid" -n ss -H -tan state established state time-wait 2>/dev/null
+  done | awk '{lp=$(NF-1); pr=$NF; nn=split(lp,LA,":"); lport=LA[nn]+0; mm=split(pr,PA,":"); pport=PA[mm]+0; peer=pr; sub(/:[0-9]+$/,"",peer); gsub(/[][]/,"",peer); if(peer!="" && lport>0 && pport>0 && lport<pport) print peer}'
+fi
+} | webflt)
+echo "WEB_CONNS=$(printf '%s\n' "$WU" | grep -c .)"
+echo "WEB_USERS=$(printf '%s\n' "$WU" | sort -u | grep -c .)"
 SH;
     }
 
