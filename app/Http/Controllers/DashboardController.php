@@ -100,7 +100,7 @@ class DashboardController extends Controller
         return redirect()->back()->with('status', $msg);
     }
 
-    /** Histórico de métricas: gráficas de tendencia (Fase 2). */
+    /** Histórico de métricas: gráficas de tendencia en tiempo real (Fase 2). */
     public function trends(Request $request, Server $server)
     {
         $hours = (int) $request->query('h', 24);
@@ -111,10 +111,43 @@ class DashboardController extends Controller
             ->orderBy('sampled_at')
             ->get();
 
-        // Pico de CPU del rango (para señalar el culpable)
         $peak = $samples->sortByDesc('cpu_pct')->first();
 
-        return view('dashboard.trends', compact('server', 'samples', 'hours', 'peak'));
+        // Estadísticas del rango
+        $cpu = $samples->pluck('cpu_pct')->filter(fn ($v) => $v !== null);
+        $stats = [
+            'avg'   => $cpu->isNotEmpty() ? (int) round($cpu->avg()) : null,
+            'max'   => $cpu->max(),
+            'min'   => $cpu->min(),
+            'count' => $samples->count(),
+        ];
+
+        // Detección de EVENTOS DE PICO: tramos contiguos con CPU alta
+        $threshold = 75;
+        $events = [];
+        $run = null;
+        foreach ($samples as $s) {
+            if ($s->cpu_pct !== null && $s->cpu_pct >= $threshold) {
+                if (! $run) {
+                    $run = ['start' => $s->sampled_at, 'end' => $s->sampled_at, 'peak' => $s, 'n' => 1];
+                } else {
+                    $run['end'] = $s->sampled_at;
+                    $run['n']++;
+                    if ($s->cpu_pct > $run['peak']->cpu_pct) {
+                        $run['peak'] = $s;
+                    }
+                }
+            } elseif ($run) {
+                $events[] = $run;
+                $run = null;
+            }
+        }
+        if ($run) {
+            $events[] = $run;
+        }
+        $events = array_reverse($events); // más recientes primero
+
+        return view('dashboard.trends', compact('server', 'samples', 'hours', 'peak', 'stats', 'events', 'threshold'));
     }
 
     /** Reporte analítico integral: CPU, RAM, ancho de banda y MySQL. */
