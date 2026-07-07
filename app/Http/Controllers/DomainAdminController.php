@@ -30,7 +30,7 @@ class DomainAdminController extends Controller
 
         GoDaddyService::saveCredentials($data['godaddy_api_key'], $data['godaddy_api_secret'] ?? null);
 
-        return redirect()->route('dashboard.domains')->with('status', 'Credenciales de GoDaddy guardadas. Ahora presiona «Sincronizar GoDaddy».');
+        return redirect()->to(route('dashboard.config').'#godaddy')->with('status', 'Credenciales de GoDaddy guardadas. Ahora presiona «Sincronizar ahora».');
     }
 
     /** Trae todos los dominios de GoDaddy con su estado. */

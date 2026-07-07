@@ -41,14 +41,14 @@ class AlertSettingsController extends Controller
         Setting::put('alert_mem', $data['alert_mem']);
         Setting::put('alert_cooldown', $data['alert_cooldown']);
 
-        return redirect()->route('dashboard.alerts')->with('status', 'Configuración de alertas guardada.');
+        return redirect()->to(route('dashboard.config').'#alertas')->with('status', 'Configuración de alertas guardada.');
     }
 
     public function test()
     {
         $r = $this->alerts->sendTest();
 
-        return redirect()->route('dashboard.alerts')
+        return redirect()->to(route('dashboard.config').'#alertas')
             ->with($r['ok'] ? 'status' : 'error', $r['message']);
     }
 }

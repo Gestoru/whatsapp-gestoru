@@ -9,7 +9,7 @@
             <button class="btn btn-sm" title="Trae el estado de todos tus dominios GoDaddy">🔄 Sincronizar GoDaddy</button>
         </form>
     @endif
-    <button class="btn btn-sm" onclick="document.getElementById('godaddy-box').classList.toggle('hidden')">🐦 GoDaddy</button>
+    <a href="{{ route('dashboard.config') }}#godaddy" class="btn btn-sm" title="Conectar o gestionar GoDaddy en Configuración">🐦 GoDaddy</a>
     <form method="POST" action="{{ route('dashboard.domains.scan') }}" style="display:inline">
         @csrf
         <button class="btn btn-sm" title="Busca dominios y subdominios en todos los servidores">🔍 Escanear servidores</button>
@@ -21,42 +21,6 @@
     @if($errors->any())
         <div class="alert alert-bad">{{ $errors->first() }}</div>
     @endif
-
-    {{-- Conexión con GoDaddy --}}
-    <div id="godaddy-box" class="card hidden" style="margin-bottom:16px">
-        <h2 style="font-size:15px;margin:0 0 6px">🐦 Conectar con GoDaddy</h2>
-        <p class="muted tiny" style="margin:0 0 12px">
-            Trae automáticamente el estado, vencimiento y auto-renovación de todos tus dominios de GoDaddy.
-            @if($godaddyConfigured)
-                <span style="color:var(--ok)">✔ Conectado.</span>
-                @if($godaddyLastSync) Última sincronización: {{ \Carbon\Carbon::parse($godaddyLastSync)->diffForHumans() }}. @endif
-            @endif
-        </p>
-
-        <div class="alert" style="background:#101a33;border-color:var(--line);color:var(--muted)">
-            <strong style="color:var(--text)">Cómo obtener tus llaves (1 minuto):</strong>
-            <ol style="margin:8px 0 0 18px;padding:0">
-                <li>Entra a <span style="font-family:ui-monospace,monospace">developer.godaddy.com/keys</span> (inicia sesión con tu cuenta GoDaddy).</li>
-                <li>Crea una API Key de <strong style="color:var(--text)">Producción</strong> ("Production").</li>
-                <li>Copia la <strong style="color:var(--text)">Key</strong> y el <strong style="color:var(--text)">Secret</strong> y pégalos aquí abajo.</li>
-            </ol>
-        </div>
-
-        <form method="POST" action="{{ route('dashboard.domains.godaddy.connect') }}">
-            @csrf
-            <div class="form-grid">
-                <div class="field"><label>API Key</label><input name="godaddy_api_key" value="{{ $godaddyKey }}" placeholder="dLD..." required></div>
-                <div class="field"><label>API Secret @if($godaddyConfigured)<span class="muted">(vacío = no cambiar)</span>@endif</label><input name="godaddy_api_secret" type="password" autocomplete="new-password" placeholder="••••••••"></div>
-            </div>
-            <div class="row" style="justify-content:flex-end;gap:8px">
-                <button class="btn btn-primary btn-sm">Guardar credenciales</button>
-                @if($godaddyConfigured)
-                    <button formaction="{{ route('dashboard.domains.godaddy.sync') }}" class="btn btn-sm">🔄 Sincronizar ahora</button>
-                @endif
-            </div>
-        </form>
-        <p class="muted tiny" style="margin-top:8px">🔒 El secreto se guarda cifrado. Los dominios se sincronizan solos cada pocas horas.</p>
-    </div>
 
     {{-- Resumen (clic para filtrar) --}}
     <div class="stat-grid" style="margin-bottom:16px">

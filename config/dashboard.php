@@ -15,6 +15,9 @@ return [
 
     'password' => env('DASHBOARD_PASSWORD'),
 
+    // Marca corta que se muestra como logo de texto en la barra lateral.
+    'brand' => env('DASHBOARD_BRAND', 'NEXO'),
+
     'title' => env('DASHBOARD_TITLE', 'Infraestructura Gestoru'),
 
     // A partir de qué % de CPU se considera "pico" y se genera evento/registro.

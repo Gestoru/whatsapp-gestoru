@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AlertSettingsController;
+use App\Http\Controllers\ConfigController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DomainAdminController;
 use App\Http\Controllers\DomainController;
@@ -48,6 +49,9 @@ Route::middleware('dashboard.auth')->prefix('panel')->name('dashboard.')->group(
     Route::post('/contabo/sincronizar', [ProviderController::class, 'syncContabo'])->name('contabo.sync');
     Route::post('/servidores/{server}/contabo/{action}', [ProviderController::class, 'serverAction'])
         ->whereIn('action', ['start', 'stop', 'restart'])->name('contabo.action');
+
+    // Centro de configuración (unifica todos los módulos de ajustes)
+    Route::get('/configuracion', [ConfigController::class, 'index'])->name('config');
 
     // Alertas por WhatsApp
     Route::get('/alertas', [AlertSettingsController::class, 'edit'])->name('alerts');

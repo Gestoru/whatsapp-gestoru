@@ -39,7 +39,7 @@ class ProviderController extends Controller
             $data['contabo_api_password'] ?? null,
         );
 
-        return redirect()->route('dashboard.index')->with('status', 'Credenciales de Contabo guardadas. Ahora presiona «Sincronizar Contabo».');
+        return redirect()->to(route('dashboard.config').'#contabo')->with('status', 'Credenciales de Contabo guardadas. Ahora presiona «Sincronizar ahora».');
     }
 
     /** Trae estado/plan/renovación de todos los VPS de Contabo. */

@@ -8,7 +8,7 @@
             <button class="btn btn-sm" title="Trae estado y plan de tus VPS Contabo">🔄 Sincronizar Contabo</button>
         </form>
     @endif
-    <button class="btn btn-sm" onclick="document.getElementById('contabo-box').classList.toggle('hidden')">🟠 Contabo</button>
+    <a href="{{ route('dashboard.config') }}#contabo" class="btn btn-sm" title="Conectar o gestionar Contabo en Configuración">🟠 Contabo</a>
     <form method="POST" action="{{ route('dashboard.tools.slowlog') }}" style="display:inline"
           onsubmit="return confirm('Activar el registro de consultas lentas de MySQL en TODOS los servidores conectados. Es seguro (solo activa un registro). ¿Continuar?')">
         @csrf
@@ -18,41 +18,6 @@
 @endsection
 
 @section('content')
-    {{-- Conexión con Contabo --}}
-    <div id="contabo-box" class="card hidden" style="margin-bottom:16px">
-        <h2 style="font-size:15px;margin:0 0 6px">🟠 Conectar con Contabo</h2>
-        <p class="muted tiny" style="margin:0 0 12px">
-            Trae automáticamente el estado, plan, región y la próxima renovación de todos tus VPS de Contabo.
-            @if($contaboConfigured)<span style="color:var(--ok)">✔ Conectado.</span>@endif
-        </p>
-        <div class="alert" style="background:#101a33;border-color:var(--line);color:var(--muted)">
-            <strong style="color:var(--text)">Cómo obtener tus credenciales:</strong>
-            <ol style="margin:8px 0 0 18px;padding:0">
-                <li>Entra a <span style="font-family:ui-monospace,monospace">my.contabo.com</span> → tu cuenta → <strong style="color:var(--text)">API / Secrets</strong>.</li>
-                <li>Copia el <strong style="color:var(--text)">Client Id</strong> y <strong style="color:var(--text)">Client Secret</strong>.</li>
-                <li>Tu <strong style="color:var(--text)">usuario API</strong> es tu email de Contabo, y ahí mismo defines/cambias la <strong style="color:var(--text)">API Password</strong>.</li>
-            </ol>
-        </div>
-        <form method="POST" action="{{ route('dashboard.contabo.connect') }}">
-            @csrf
-            <div class="form-grid">
-                <div class="field"><label>Client Id</label><input name="contabo_client_id" value="{{ $contaboClientId }}" required></div>
-                <div class="field"><label>Client Secret @if($contaboConfigured)<span class="muted">(vacío = no cambiar)</span>@endif</label><input name="contabo_client_secret" type="password" autocomplete="new-password" placeholder="••••••••"></div>
-            </div>
-            <div class="form-grid">
-                <div class="field"><label>Usuario API (tu email de Contabo)</label><input name="contabo_api_user" value="{{ $contaboApiUser }}" required></div>
-                <div class="field"><label>API Password @if($contaboConfigured)<span class="muted">(vacío = no cambiar)</span>@endif</label><input name="contabo_api_password" type="password" autocomplete="new-password" placeholder="••••••••"></div>
-            </div>
-            <div class="row" style="justify-content:flex-end;gap:8px">
-                <button class="btn btn-primary btn-sm">Guardar credenciales</button>
-                @if($contaboConfigured)
-                    <button formaction="{{ route('dashboard.contabo.sync') }}" class="btn btn-sm">🔄 Sincronizar ahora</button>
-                @endif
-            </div>
-        </form>
-        <p class="muted tiny" style="margin-top:8px">🔒 Los secretos se guardan cifrados. Los VPS se sincronizan solos cada pocas horas.</p>
-    </div>
-
     @if($servers->isEmpty())
         <div class="card empty">
             <div class="big">🗄️</div>
