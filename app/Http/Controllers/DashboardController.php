@@ -55,7 +55,11 @@ class DashboardController extends Controller
             ->groupBy('server_id')
             ->map->first();
 
-        return view('dashboard.index', compact('servers', 'latest'));
+        $contaboConfigured = app(\App\Services\ContaboService::class)->configured();
+        $contaboClientId   = \App\Models\Setting::get('contabo_client_id');
+        $contaboApiUser    = \App\Models\Setting::get('contabo_api_user');
+
+        return view('dashboard.index', compact('servers', 'latest', 'contaboConfigured', 'contaboClientId', 'contaboApiUser'));
     }
 
     /** Detalle de un servidor: métricas + proyectos + dominios. */

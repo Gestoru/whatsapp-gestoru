@@ -223,6 +223,8 @@ cat > /etc/cron.d/gestoru-dashboard <<CRON
 */5 * * * * www-data cd ${APP_DIR} && flock -w 240 /tmp/gestoru-metrics.lock ${PHP_BIN} artisan metrics:sample >/dev/null 2>&1
 # Sincronización de dominios GoDaddy (cada 4 horas)
 17 */4 * * * www-data cd ${APP_DIR} && ${PHP_BIN} artisan domains:sync-godaddy >/dev/null 2>&1
+# Sincronización de VPS Contabo (cada 4 horas)
+37 */4 * * * www-data cd ${APP_DIR} && ${PHP_BIN} artisan servers:sync-contabo >/dev/null 2>&1
 CRON
 chmod 644 /etc/cron.d/gestoru-dashboard
 systemctl restart cron 2>/dev/null || systemctl restart crond 2>/dev/null || true

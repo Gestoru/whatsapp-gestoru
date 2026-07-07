@@ -22,6 +22,11 @@ class Server extends Model
         'paid_until',
         'monthly_cost',
         'renewal_url',
+        'provider_status',
+        'provider_product',
+        'provider_region',
+        'provider_instance_id',
+        'provider_synced_at',
     ];
 
     /**
@@ -41,8 +46,9 @@ class Server extends Model
             'key_passphrase' => 'encrypted',
             'is_active'      => 'boolean',
             'port'           => 'integer',
-            'paid_until'     => 'date',
-            'monthly_cost'   => 'decimal:2',
+            'paid_until'         => 'date',
+            'monthly_cost'       => 'decimal:2',
+            'provider_synced_at' => 'datetime',
         ];
     }
 

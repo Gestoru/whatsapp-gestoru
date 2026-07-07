@@ -4,6 +4,7 @@ use App\Http\Controllers\AlertSettingsController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DomainAdminController;
 use App\Http\Controllers\DomainController;
+use App\Http\Controllers\ProviderController;
 use App\Http\Controllers\ServerController;
 use App\Http\Controllers\ServerFileController;
 use App\Http\Controllers\StressController;
@@ -41,6 +42,10 @@ Route::middleware('dashboard.auth')->prefix('panel')->name('dashboard.')->group(
 
     // Herramientas de mantenimiento (acciones explícitas)
     Route::post('/herramientas/slowlog', [DashboardController::class, 'enableSlowLogAll'])->name('tools.slowlog');
+
+    // Integración con Contabo (estado y plan de los VPS)
+    Route::post('/contabo/conectar', [ProviderController::class, 'connectContabo'])->name('contabo.connect');
+    Route::post('/contabo/sincronizar', [ProviderController::class, 'syncContabo'])->name('contabo.sync');
 
     // Alertas por WhatsApp
     Route::get('/alertas', [AlertSettingsController::class, 'edit'])->name('alerts');
