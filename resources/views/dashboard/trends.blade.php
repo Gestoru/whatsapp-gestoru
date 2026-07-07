@@ -5,6 +5,7 @@
 @section('actions')
     <a href="{{ route('dashboard.servers.show', $server) }}" class="btn btn-ghost btn-sm">← {{ $server->name }}</a>
     <a href="#analisis" class="btn btn-sm">🔬 Ir al análisis</a>
+    <a href="{{ route('dashboard.servers.queries', $server) }}" class="btn btn-sm">🧠 Optimizador SQL</a>
 @endsection
 
 @php

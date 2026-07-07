@@ -225,6 +225,34 @@ class DashboardController extends Controller
         return view('dashboard.partials.analytics-report', $data);
     }
 
+    /** Optimizador de consultas MySQL con contexto para IA (página). */
+    public function queryOptimizer(Server $server)
+    {
+        return view('dashboard.queries', compact('server'));
+    }
+
+    /** Fragmento HTML del optimizador de consultas (se carga por AJAX). */
+    public function queryOptimizerPanel(Server $server, \App\Services\QueryAdvisor $advisor)
+    {
+        $data = ['server' => $server, 'report' => null, 'queries' => [], 'error' => null];
+
+        if (! $server->hasCredentials()) {
+            $data['error'] = 'Este servidor aún no tiene credenciales configuradas.';
+        } else {
+            try {
+                $report = $this->monitor->queryReport($server);
+                $data['report'] = $report;
+                if ($report['available']) {
+                    $data['queries'] = $advisor->analyze($report, $server);
+                }
+            } catch (\Throwable $e) {
+                $data['error'] = $e->getMessage();
+            }
+        }
+
+        return view('dashboard.partials.query-report', $data);
+    }
+
     /** Endpoint JSON para refrescar solo las métricas (auto-refresh). */
     public function metrics(Server $server)
     {

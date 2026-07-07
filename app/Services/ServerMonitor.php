@@ -487,6 +487,136 @@ SH;
     }
 
     /**
+     * Reporte profundo de consultas para el optimizador con IA: estadísticas
+     * completas por consulta (performance_schema), usuarios que las ejecutan
+     * y estructura de las tablas involucradas.
+     *
+     * @return array<string, mixed>
+     */
+    public function queryReport(Server $server): array
+    {
+        $raw = $this->ssh->run($server, $this->queryReportScript());
+        $s   = $this->splitSections($raw);
+
+        $via = trim($s['QVIA'] ?? '');
+        if ($via === '') {
+            return ['available' => false];
+        }
+
+        // Info del servidor MySQL (versión, uptime, buffer pool, conexiones)
+        $version = null; $uptime = null; $buffer = null; $maxConn = null;
+        foreach ($this->nonEmptyLines($s['QSERVER'] ?? '') as $line) {
+            $p = preg_split('/\t+/', trim($line));
+            if (($p[0] ?? '') === 'Uptime') {
+                $uptime = (int) ($p[1] ?? 0);
+            } elseif (count($p) >= 2 && is_numeric($p[0]) && is_numeric($p[1])) {
+                $buffer = (int) $p[0];
+                $maxConn = (int) $p[1];
+            } elseif ($version === null) {
+                $version = trim($line);
+            }
+        }
+
+        $queries = $this->parsePipeTable($s['QDIGESTS'] ?? '', [
+            'digest', 'db', 'execs', 'total_s', 'avg_ms', 'max_ms', 'lock_s',
+            'rows_examined', 'rows_sent', 'tmp_disk', 'tmp_mem', 'full_join',
+            'full_scan', 'no_index', 'no_good_index', 'first_seen', 'last_seen', 'query',
+        ]);
+        $users = $this->parsePipeTable($s['QUSERS'] ?? '', ['user', 'execs', 'total_s']);
+
+        // Usuario por consulta: muestra de la historia reciente (mejor esfuerzo,
+        // el resumen por digest de MySQL no guarda el usuario).
+        $userMap = [];
+        foreach ($this->parsePipeTable($s['QDIGESTUSER'] ?? '', ['digest', 'user', 'n']) as $r) {
+            $userMap[$r['digest']][] = $r['user'];
+        }
+
+        $allTables = [];
+        foreach ($queries as &$q) {
+            $q['users']  = array_values(array_unique($userMap[$q['digest']] ?? []));
+            $q['tables'] = $this->extractTables($q['query'], $q['db']);
+            foreach ($q['tables'] as $t) {
+                $allTables[$t] = true;
+            }
+        }
+        unset($q);
+
+        return [
+            'available' => true,
+            'via'       => $via,
+            'version'   => $version,
+            'uptime'    => $uptime,
+            'buffer'    => $buffer,
+            'max_conn'  => $maxConn,
+            'queries'   => $queries,
+            'users'     => $users,
+            'ddl'       => $this->fetchTableDdl($server, array_slice(array_keys($allTables), 0, 15)),
+        ];
+    }
+
+    /** Estructura (SHOW CREATE TABLE) y tamaño de tablas puntuales. */
+    private function fetchTableDdl(Server $server, array $tables): array
+    {
+        if (empty($tables)) {
+            return [];
+        }
+
+        $cmds = '';
+        foreach ($tables as $i => $t) {
+            [$db, $tb] = explode('.', $t, 2);
+            $cmds .= "echo \"==T{$i}==\"\n";
+            $cmds .= "[ -n \"\$MYSQL\" ] && \$MYSQL -N -B -e \"SHOW CREATE TABLE \\\`{$db}\\\`.\\\`{$tb}\\\`\" 2>/dev/null\n";
+            $cmds .= "echo \"==I{$i}==\"\n";
+            $cmds .= "[ -n \"\$MYSQL\" ] && \$MYSQL -N -B -e \"SELECT TABLE_ROWS, ROUND((DATA_LENGTH+INDEX_LENGTH)/1048576,1) FROM information_schema.tables WHERE table_schema='{$db}' AND table_name='{$tb}'\" 2>/dev/null\n";
+        }
+
+        $sec = $this->splitSections($this->ssh->run($server, $this->mysqlDetectSnippet()."\n".$cmds));
+
+        $out = [];
+        foreach ($tables as $i => $t) {
+            $create = trim($sec["T{$i}"] ?? '');
+            if ($create === '') {
+                continue;
+            }
+            // -B entrega "tabla<TAB>CREATE TABLE..." con \n escapados
+            $tab = strpos($create, "\t");
+            $create = $tab !== false ? substr($create, $tab + 1) : $create;
+            $create = str_replace(['\n', '\t'], ["\n", '  '], $create);
+
+            $info = preg_split('/\t/', trim($sec["I{$i}"] ?? ''));
+            $out[$t] = [
+                'create' => $create,
+                'rows'   => isset($info[0]) && is_numeric($info[0]) ? (int) $info[0] : null,
+                'mb'     => isset($info[1]) && is_numeric($info[1]) ? (float) $info[1] : null,
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Tablas mencionadas en una consulta normalizada (FROM/JOIN/UPDATE/INTO).
+     *
+     * @return array<int, string> pares "basededatos.tabla"
+     */
+    private function extractTables(string $query, string $defaultDb): array
+    {
+        $tables = [];
+        if (preg_match_all('/\b(?:FROM|JOIN|INTO|UPDATE)\s+`?(\w+)`?(?:\s*\.\s*`?(\w+)`?)?/i', $query, $m, PREG_SET_ORDER)) {
+            foreach ($m as $match) {
+                $db = ! empty($match[2]) ? $match[1] : $defaultDb;
+                $tb = ! empty($match[2]) ? $match[2] : $match[1];
+                if ($db === '' || $db === '-' || in_array(strtoupper($tb), ['SELECT', 'DUAL'], true)) {
+                    continue;
+                }
+                $tables["{$db}.{$tb}"] = true;
+            }
+        }
+
+        return array_keys($tables);
+    }
+
+    /**
      * Activa el registro de consultas lentas (slow query log) de MySQL/MariaDB
      * en caliente y lo deja persistente. Acción explícita de configuración.
      *
@@ -537,6 +667,45 @@ SH;
     }
 
     // ── Scripts remotos ─────────────────────────────────────────────────────
+
+    /** Trozo de shell que deja en $MYSQL el cliente utilizable (host o Docker) y en $VIA cómo se llegó. */
+    private function mysqlDetectSnippet(): string
+    {
+        return <<<'SH'
+MYSQL=""; VIA=""
+if command -v mysql >/dev/null 2>&1 && mysql -e "SELECT 1" >/dev/null 2>&1; then
+  MYSQL="mysql"; VIA="host"
+elif command -v docker >/dev/null 2>&1; then
+  for c in $(docker ps --format '{{.Names}}' 2>/dev/null | grep -Ei 'mysql|mariadb|maria|percona|db|database'); do
+    docker exec "$c" sh -c 'command -v mysql || command -v mariadb' >/dev/null 2>&1 || continue
+    PW=$(docker exec "$c" sh -c 'printf %s "${MYSQL_ROOT_PASSWORD:-$MARIADB_ROOT_PASSWORD}"' 2>/dev/null)
+    if [ -n "$PW" ]; then TRY="docker exec $c mysql -uroot -p$PW"; else TRY="docker exec $c mysql"; fi
+    if $TRY -e "SELECT 1" >/dev/null 2>&1; then MYSQL="$TRY"; VIA="docker: $c"; break; fi
+  done
+fi
+SH;
+    }
+
+    private function queryReportScript(): string
+    {
+        $detect = $this->mysqlDetectSnippet();
+
+        return <<<SH
+{$detect}
+echo "==QVIA=="
+[ -n "\$MYSQL" ] && echo "\$VIA"
+echo "==QSERVER=="
+[ -n "\$MYSQL" ] && \$MYSQL -N -B -e "SELECT VERSION()" 2>/dev/null
+[ -n "\$MYSQL" ] && \$MYSQL -N -B -e "SHOW GLOBAL STATUS WHERE Variable_name='Uptime'" 2>/dev/null
+[ -n "\$MYSQL" ] && \$MYSQL -N -B -e "SELECT @@innodb_buffer_pool_size, @@max_connections" 2>/dev/null
+echo "==QDIGESTS=="
+[ -n "\$MYSQL" ] && \$MYSQL -N -B -e "SELECT DIGEST, COALESCE(SCHEMA_NAME,'-'), COUNT_STAR, ROUND(SUM_TIMER_WAIT/1000000000000,1), ROUND(SUM_TIMER_WAIT/COUNT_STAR/1000000000,1), ROUND(MAX_TIMER_WAIT/1000000000,1), ROUND(SUM_LOCK_TIME/1000000000000,1), SUM_ROWS_EXAMINED, SUM_ROWS_SENT, SUM_CREATED_TMP_DISK_TABLES, SUM_CREATED_TMP_TABLES, SUM_SELECT_FULL_JOIN, SUM_SELECT_SCAN, SUM_NO_INDEX_USED, SUM_NO_GOOD_INDEX_USED, FIRST_SEEN, LAST_SEEN, LEFT(REPLACE(REPLACE(DIGEST_TEXT,'\\n',' '),'\\t',' '),500) FROM performance_schema.events_statements_summary_by_digest WHERE SCHEMA_NAME IS NOT NULL AND SCHEMA_NAME NOT IN ('mysql','sys','performance_schema','information_schema') AND DIGEST_TEXT IS NOT NULL ORDER BY SUM_TIMER_WAIT DESC LIMIT 12" 2>/dev/null
+echo "==QUSERS=="
+[ -n "\$MYSQL" ] && \$MYSQL -N -B -e "SELECT USER, SUM(COUNT_STAR), ROUND(SUM(SUM_TIMER_WAIT)/1000000000000,1) FROM performance_schema.events_statements_summary_by_user_by_event_name WHERE USER IS NOT NULL GROUP BY USER ORDER BY 3 DESC LIMIT 10" 2>/dev/null
+echo "==QDIGESTUSER=="
+[ -n "\$MYSQL" ] && \$MYSQL -N -B -e "SELECT h.DIGEST, COALESCE(t.PROCESSLIST_USER,'?'), COUNT(*) FROM (SELECT DIGEST, THREAD_ID FROM performance_schema.events_statements_history WHERE DIGEST IS NOT NULL UNION ALL SELECT DIGEST, THREAD_ID FROM performance_schema.events_statements_history_long WHERE DIGEST IS NOT NULL) h JOIN performance_schema.threads t ON t.THREAD_ID=h.THREAD_ID GROUP BY 1,2 ORDER BY 3 DESC LIMIT 300" 2>/dev/null
+SH;
+    }
 
     private function analyticsScript(string $logArgs): string
     {

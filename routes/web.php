@@ -34,6 +34,8 @@ Route::middleware('dashboard.auth')->prefix('panel')->name('dashboard.')->group(
     Route::get('/servidores/{server}/analisis', [DashboardController::class, 'analytics'])->name('servers.analytics'); // redirige al panel unificado
     Route::get('/servidores/{server}/analisis-panel', [DashboardController::class, 'analyticsPanel'])->name('servers.analytics.panel');
     Route::get('/servidores/{server}/tendencias', [DashboardController::class, 'trends'])->name('servers.trends');
+    Route::get('/servidores/{server}/consultas', [DashboardController::class, 'queryOptimizer'])->name('servers.queries');
+    Route::get('/servidores/{server}/consultas-panel', [DashboardController::class, 'queryOptimizerPanel'])->name('servers.queries.panel');
     Route::get('/servidores/{server}/estres', [StressController::class, 'form'])->name('servers.stress');
     Route::post('/servidores/{server}/estres', [StressController::class, 'run'])->name('servers.stress.run');
 

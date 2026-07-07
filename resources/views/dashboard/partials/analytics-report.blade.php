@@ -152,6 +152,7 @@
     {{-- ── MySQL ── --}}
     <h2><span class="section-ic">🗄️</span> Base de datos MySQL / MariaDB
         @if(!empty($report['mysql_via']))<span class="muted tiny" style="font-weight:400">· leído vía {{ $report['mysql_via'] }}</span>@endif
+        <a href="{{ route('dashboard.servers.queries', $server) }}" class="btn btn-sm" style="margin-left:auto">🧠 Optimizar consultas con IA</a>
     </h2>
     @if(!$report['mysql_available'])
         <div class="list-card" style="padding:16px">
