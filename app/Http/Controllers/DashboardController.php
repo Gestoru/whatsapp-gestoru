@@ -311,9 +311,59 @@ class DashboardController extends Controller
         }
 
         try {
-            return response()->json(['ok' => true, 'metrics' => $this->monitor->metrics($server)]);
+            $m        = $this->monitor->metrics($server);
+            $critical = (int) config('dashboard.cpu_critical_threshold', 90);
+            $peak     = null;
+
+            if (($m['cpu_pct'] ?? null) !== null && $m['cpu_pct'] >= $critical) {
+                $peak = $this->capturePeakNow($server, $m);
+            }
+
+            return response()->json([
+                'ok'       => true,
+                'metrics'  => $m,
+                'critical' => $critical,
+                'peak'     => $peak,
+            ]);
         } catch (\Throwable $e) {
             return response()->json(['ok' => false, 'error' => $e->getMessage()], 200);
+        }
+    }
+
+    /**
+     * Registra AL INSTANTE un pico crítico visto en vivo (sin esperar el
+     * muestreo de 5 min): guarda la muestra con el proceso culpable y dispara
+     * las alertas. Máximo una captura por minuto por servidor.
+     *
+     * @return array{captured: bool, process: ?string, pct: ?float}|null
+     */
+    private function capturePeakNow(Server $server, array $m): ?array
+    {
+        if (! \Illuminate\Support\Facades\Cache::add("peak-capture:{$server->id}", true, 60)) {
+            return null; // ya se registró hace menos de un minuto
+        }
+
+        try {
+            try {
+                $top = $this->monitor->topProcesses($server);
+            } catch (\Throwable) {
+                $top = ['cpu' => [], 'mem' => []];
+            }
+
+            $sample = \App\Models\MetricSample::fromMetrics($server, $m, $top);
+            app(\App\Services\AlertService::class)->checkSample($server, $sample);
+
+            return [
+                'captured' => true,
+                'process'  => $sample->top_cpu_cmd,
+                'pct'      => $sample->top_cpu_pct,
+            ];
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('No se pudo registrar el pico crítico', [
+                'server' => $server->name, 'error' => $e->getMessage(),
+            ]);
+
+            return null;
         }
     }
 }

@@ -60,6 +60,15 @@
     .glow-line{filter:drop-shadow(0 0 4px currentColor)}
     .stat-fx{background:linear-gradient(180deg,#151d36,#0f1730);border:1px solid #26324f;border-radius:12px;padding:14px}
     .stat-fx .n{font-size:26px;font-weight:800;line-height:1}
+    /* ── Modo sísmico: pico crítico de CPU ── */
+    @keyframes quake{0%,100%{transform:translate(0,0)}10%{transform:translate(-3px,1px)}20%{transform:translate(3px,-1px)}
+        30%{transform:translate(-2px,-2px)}40%{transform:translate(2px,2px)}50%{transform:translate(-3px,0)}
+        60%{transform:translate(3px,1px)}70%{transform:translate(-1px,2px)}80%{transform:translate(2px,-2px)}90%{transform:translate(-2px,1px)}}
+    .quake{animation:quake .45s linear infinite;border-color:#ff4d6d!important;box-shadow:0 0 34px #ff4d6d66}
+    #crit-banner{display:none;align-items:center;gap:10px;background:#3a0f1a;border:1px solid #ff4d6d;color:#fecaca;
+        border-radius:12px;padding:10px 14px;margin:12px 0 0;font-weight:700;font-size:14px;position:relative;z-index:2;
+        animation:critblink 1.1s ease-in-out infinite;flex-wrap:wrap}
+    @keyframes critblink{50%{background:#57121f;box-shadow:0 0 18px #ff4d6d55}}
 </style>
 @endpush
 
@@ -78,8 +87,12 @@
     <div class="live-wrap" data-metrics-url="{{ route('dashboard.servers.metrics', $server) }}">
         <div class="row" style="justify-content:space-between">
             <span class="live-badge"><span class="pulse"></span> En vivo · se actualiza solo</span>
-            <span class="tiny muted" id="live-time">—</span>
+            <span class="row" style="gap:10px">
+                <button id="alarm-toggle" type="button" class="btn btn-ghost btn-sm" style="position:relative;z-index:2" title="Suena una alarma sísmica cuando la CPU pasa del umbral crítico">🔊</button>
+                <span class="tiny muted" id="live-time">—</span>
+            </span>
         </div>
+        <div id="crit-banner"><span id="crit-text"></span></div>
         <div class="gauges">
             @foreach([['cpu','CPU','#ff4d6d'],['mem','RAM','#22e39b'],['disk','Disco','#38bdf8']] as [$k,$label,$color])
                 <div class="gauge" style="color:{{ $color }}">
@@ -192,8 +205,9 @@
 
         {{-- ═══ REPORTE DE EVENTOS DE PICO ═══ --}}
         <h2><span class="section-ic">🚨</span> Reporte de eventos de pico <span class="muted tiny" style="font-weight:400">· CPU ≥ {{ $threshold }}%</span></h2>
+        <div class="grid" id="events-grid" style="gap:12px;margin-bottom:12px"></div>
         @if(empty($events))
-            <div class="list-card" style="padding:18px">
+            <div class="list-card" id="events-empty" style="padding:18px">
                 <span class="muted tiny">✅ Sin picos de CPU en este rango. Todo estable.</span>
             </div>
         @else
@@ -268,10 +282,119 @@ async function tick(){
         document.getElementById('c-cores').textContent = m.cpu_cores;
         const now = new Date();
         document.getElementById('live-time').textContent = 'actualizado ' + now.toLocaleTimeString();
+        handleCritical(m, d);
     }catch(e){ document.getElementById('live-time').textContent='sin conexión'; }
 }
 tick();
 setInterval(tick, 8000);
+
+// ═══ MODO SÍSMICO: pico crítico de CPU ═══
+const CRIT       = {{ (int) config('dashboard.cpu_critical_threshold', 90) }};
+const BASE_TITLE = document.title;
+const liveWrap   = document.querySelector('.live-wrap');
+const banner     = document.getElementById('crit-banner');
+const alarmBtn   = document.getElementById('alarm-toggle');
+let audioCtx = null, lastQuakeSound = 0, critActive = false;
+let alarmOn = localStorage.getItem('cpuAlarm') !== 'off';
+
+function paintAlarmBtn(){
+    alarmBtn.textContent = alarmOn ? '🔊 Alarma: activa' : '🔇 Alarma: apagada';
+    alarmBtn.style.color = alarmOn ? '#22e39b' : '#94a3c4';
+}
+paintAlarmBtn();
+
+function ensureAudio(){
+    try{
+        if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+        if(audioCtx.state === 'suspended') audioCtx.resume();
+    }catch(_){}
+}
+// Los navegadores solo permiten sonido tras una interacción: se arma con el primer clic/tecla
+document.addEventListener('pointerdown', ensureAudio);
+document.addEventListener('keydown', ensureAudio);
+
+alarmBtn.addEventListener('click', () => {
+    alarmOn = !alarmOn;
+    localStorage.setItem('cpuAlarm', alarmOn ? 'on' : 'off');
+    paintAlarmBtn();
+    ensureAudio();
+    if(alarmOn) quakeSound(0.35); // pequeña muestra al activarla
+});
+
+// Sonido sísmico "prudente": retumbo grave + dos tonos de aviso (~3 s, volumen moderado)
+function quakeSound(vol = 0.5){
+    if(!audioCtx || audioCtx.state !== 'running') return;
+    const t0 = audioCtx.currentTime, dur = 2.8;
+    // Retumbo de terremoto: ruido filtrado a frecuencias bajas
+    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * dur, audioCtx.sampleRate);
+    const data = buf.getChannelData(0);
+    for(let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    const noise = audioCtx.createBufferSource(); noise.buffer = buf;
+    const lp = audioCtx.createBiquadFilter(); lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(95, t0); lp.frequency.linearRampToValueAtTime(45, t0 + dur);
+    const ng = audioCtx.createGain();
+    ng.gain.setValueAtTime(0.0001, t0);
+    ng.gain.exponentialRampToValueAtTime(vol, t0 + 0.3);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    noise.connect(lp); lp.connect(ng); ng.connect(audioCtx.destination);
+    noise.start(t0);
+    // Dos avisos tonales discretos encima del retumbo
+    [0.15, 1.3].forEach(off => {
+        const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(620, t0 + off);
+        o.frequency.exponentialRampToValueAtTime(880, t0 + off + 0.4);
+        g.gain.setValueAtTime(0.0001, t0 + off);
+        g.gain.exponentialRampToValueAtTime(vol * 0.45, t0 + off + 0.06);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + off + 0.75);
+        o.connect(g); g.connect(audioCtx.destination);
+        o.start(t0 + off); o.stop(t0 + off + 0.8);
+    });
+}
+
+function handleCritical(m, d){
+    const cpu  = m.cpu_pct;
+    const crit = cpu != null && cpu >= CRIT;
+
+    if(crit){
+        banner.style.display = 'flex';
+        let txt = '🚨 PICO CRÍTICO: CPU al ' + cpu + '%';
+        if(d.peak && d.peak.process) txt += ' · proceso: ' + d.peak.process.slice(0, 70) + (d.peak.pct ? ' (' + d.peak.pct + '%)' : '');
+        if(d.peak && d.peak.captured) txt += ' · ✔ registrado en el reporte de picos';
+        document.getElementById('crit-text').textContent = txt;
+        if(d.peak && d.peak.process) document.getElementById('c-topcpu').textContent = d.peak.process.slice(0, 55);
+        liveWrap.classList.add('quake');
+        document.title = '🚨 CPU ' + cpu + '% · ' + BASE_TITLE;
+        if(alarmOn && Date.now() - lastQuakeSound > 45000){ ensureAudio(); quakeSound(); lastQuakeSound = Date.now(); }
+        if(d.peak && d.peak.captured) prependLiveEvent(cpu, m, d.peak);
+    }else{
+        banner.style.display = 'none';
+        liveWrap.classList.remove('quake');
+        if(critActive) document.title = BASE_TITLE;
+    }
+    critActive = crit;
+}
+
+// Inserta el pico recién capturado en el reporte, sin recargar la página
+function prependLiveEvent(cpu, m, peak){
+    const grid = document.getElementById('events-grid');
+    if(!grid) return;
+    const empty = document.getElementById('events-empty');
+    if(empty) empty.remove();
+    const hh = new Date().toLocaleTimeString('es', {hour: '2-digit', minute: '2-digit'});
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.style.cssText = 'padding:14px 16px;border-left:3px solid #ff4d6d;box-shadow:0 0 18px #ff4d6d33';
+    el.innerHTML =
+        '<div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px">'
+        + '<div><div style="font-weight:700;font-size:15px">🔴 Pico de ' + cpu + '% CPU '
+        + '<span class="muted tiny" style="font-weight:400">· hoy ' + hh + ' · capturado EN VIVO</span></div>'
+        + '<div class="tiny muted" style="margin-top:4px">RAM ' + (m.mem.pct ?? '—') + '% · carga ' + (m.load || '—') + '</div></div>'
+        + '<div style="text-align:right;max-width:55%"><div class="tiny muted">Proceso que más consumía</div>'
+        + '<div style="font-family:ui-monospace,monospace;font-size:12px;word-break:break-all;color:#fca5a5">'
+        + (peak.process ? peak.process : '—') + (peak.pct ? ' (' + peak.pct + '%)' : '') + '</div></div></div>';
+    grid.prepend(el);
+}
 
 // ── Análisis profundo: se carga aparte para no frenar la página ──
 const anBody = document.getElementById('an-body');

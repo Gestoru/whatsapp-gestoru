@@ -23,4 +23,8 @@ return [
     // A partir de qué % de CPU se considera "pico" y se genera evento/registro.
     'cpu_peak_threshold' => (int) env('DASHBOARD_CPU_PEAK', 50),
 
+    // A partir de qué % de CPU el pico es CRÍTICO: el panel lo registra al
+    // instante (sin esperar el muestreo de 5 min) y suena la alarma sísmica.
+    'cpu_critical_threshold' => (int) env('DASHBOARD_CPU_CRITICAL', 90),
+
 ];
