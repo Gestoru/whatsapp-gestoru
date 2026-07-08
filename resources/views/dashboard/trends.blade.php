@@ -218,31 +218,47 @@
             </div>
         @else
             <div class="grid" style="gap:12px">
-                @foreach($events as $ev)
+                @foreach($events as $i => $ev)
                     @php($dur = (int) round($ev['start']->diffInMinutes($ev['end'])))
+                    @php($pk = $ev['peak'])
+                    @php($evPrompt = "Actúa como ingeniero SRE (Linux/Docker/MySQL). Analiza este pico puntual de CPU en un servidor de producción y dime la causa más probable y cómo resolverlo.\n\n## Servidor\n- {$server->name} ({$server->host})\n\n## El pico\n- Momento: ".$ev['start']->format('d/m/Y H:i').($dur>0?'–'.$ev['end']->format('H:i')." ({$dur} min)":'')." (hora Colombia)\n- CPU: {$pk->cpu_pct}% · RAM: ".($pk->memPct() ?? '?')."% · carga (1m): {$pk->load1}\n- Proceso que más consumía: ".($pk->top_cpu_cmd ?? '—').($pk->top_cpu_pct?" ({$pk->top_cpu_pct}%)":'').($pk->top_container?"\n- Contenedor Docker responsable: {$pk->top_container} ({$pk->top_container_pct}% de un núcleo)":'')."\n- Muestras del pico: {$ev['n']}\n\n## Qué necesito\n1. Causa más probable de este pico concreto.\n2. Comandos exactos para confirmarla en el servidor.\n3. Cómo evitar que se repita.\nSi el contenedor es de base de datos, dime qué consultas revisar. Si te falta info, dime qué comando ejecutar.")
                     <div class="card" style="padding:14px 16px;border-left:3px solid #ff4d6d">
                         <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
                             <div>
                                 <div style="font-weight:700;font-size:15px">
-                                    🔴 Pico de {{ $ev['peak']->cpu_pct }}% CPU
+                                    🔴 Pico de {{ $pk->cpu_pct }}% CPU
                                     <span class="muted tiny" style="font-weight:400">· {{ $ev['start']->format('d/m H:i') }}@if($dur>0)–{{ $ev['end']->format('H:i') }} ({{ $dur }} min)@endif</span>
                                 </div>
                                 <div class="tiny muted" style="margin-top:4px">
-                                    RAM {{ $ev['peak']->memPct() }}% · carga {{ $ev['peak']->load1 }} · {{ $ev['n'] }} muestra(s)
+                                    RAM {{ $pk->memPct() }}% · carga {{ $pk->load1 }} · {{ $ev['n'] }} muestra(s)
                                 </div>
                             </div>
                             <div style="text-align:right;max-width:55%">
                                 <div class="tiny muted">Proceso que más consumía</div>
                                 <div style="font-family:ui-monospace,monospace;font-size:12px;word-break:break-all;color:#fca5a5">
-                                    {{ $ev['peak']->top_cpu_cmd ?? '—' }} @if($ev['peak']->top_cpu_pct)({{ $ev['peak']->top_cpu_pct }}%)@endif
+                                    {{ $pk->top_cpu_cmd ?? '—' }} @if($pk->top_cpu_pct)({{ $pk->top_cpu_pct }}%)@endif
                                 </div>
-                                @if($ev['peak']->top_container)
+                                @if($pk->top_container)
                                     <div class="tiny" style="margin-top:4px;color:#7dd3fc;font-family:ui-monospace,monospace">
-                                        🐳 {{ $ev['peak']->top_container }} ({{ $ev['peak']->top_container_pct }}% de un núcleo)
+                                        🐳 {{ $pk->top_container }} ({{ $pk->top_container_pct }}% de un núcleo)
                                     </div>
                                 @endif
                             </div>
                         </div>
+                        <details style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px">
+                            <summary style="cursor:pointer;font-size:12px;color:#7dd3fc;list-style:none">🔬 Detalle técnico y contexto de este pico</summary>
+                            <div class="tiny muted" style="margin-top:8px;line-height:1.7">
+                                <div>• <b>De dónde sale este dato:</b> el panel guarda una muestra cada 5 min y captura al instante los picos ≥90%. En cada muestra corre <code>top</code> (proceso que más CPU usa en ese instante) y <code>docker stats</code> (contenedor responsable).</div>
+                                <div>• <b>Momento exacto (hora Colombia):</b> {{ $ev['start']->format('d/m/Y H:i:s') }}@if($dur>0) a {{ $ev['end']->format('H:i:s') }}@endif</div>
+                                <div>• <b>CPU máx del pico:</b> {{ $pk->cpu_pct }}% · <b>RAM:</b> {{ $pk->memPct() ?? '?' }}% · <b>carga 1m:</b> {{ $pk->load1 }}</div>
+                                <div>• <b>Proceso:</b> <span style="font-family:ui-monospace,monospace">{{ $pk->top_cpu_cmd ?? '—' }}</span></div>
+                                @if($pk->top_container)<div>• <b>Contenedor Docker:</b> <span style="font-family:ui-monospace,monospace">{{ $pk->top_container }}</span> — si es la base de datos, revisa el <a href="{{ route('dashboard.servers.queries', $server) }}" style="color:var(--accent)">optimizador de consultas</a>.</div>@endif
+                            </div>
+                            <div class="row" style="margin-top:10px">
+                                <button type="button" class="btn btn-primary btn-sm" data-copy="peak-ai-{{ $i }}">🤖 Copiar informe de este pico para IA</button>
+                            </div>
+                            <textarea id="peak-ai-{{ $i }}" readonly style="display:none">{{ $evPrompt }}</textarea>
+                        </details>
                     </div>
                 @endforeach
             </div>

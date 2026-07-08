@@ -412,7 +412,7 @@ class DashboardController extends Controller
     /** Fragmento HTML del optimizador de consultas (se carga por AJAX). */
     public function queryOptimizerPanel(Server $server, \App\Services\QueryAdvisor $advisor)
     {
-        $data = ['server' => $server, 'report' => null, 'queries' => [], 'error' => null];
+        $data = ['server' => $server, 'report' => null, 'queries' => [], 'resolved' => [], 'error' => null];
 
         if (! $server->hasCredentials()) {
             $data['error'] = 'Este servidor aún no tiene credenciales configuradas.';
@@ -421,7 +421,9 @@ class DashboardController extends Controller
                 $report = $this->monitor->queryReport($server);
                 $data['report'] = $report;
                 if ($report['available']) {
-                    $data['queries'] = $advisor->analyze($report, $server);
+                    $queries = $advisor->analyze($report, $server);
+                    [$queries, $data['resolved']] = $this->trackQueries($server, $queries);
+                    $data['queries'] = $queries;
                 }
             } catch (\Throwable $e) {
                 $data['error'] = $e->getMessage();
@@ -429,6 +431,95 @@ class DashboardController extends Controller
         }
 
         return view('dashboard.partials.query-report', $data);
+    }
+
+    /**
+     * Seguimiento de consultas: compara cada consulta con su última foto
+     * guardada para saber si mejoró/empeoró tras optimizarla, detecta las que
+     * ya salieron del ranking (posiblemente resueltas) y guarda una nueva foto
+     * (como máximo una cada 15 min por servidor, para no llenar la tabla).
+     *
+     * @return array{0: array<int,array>, 1: array<int,array>} [consultas con tendencia, resueltas]
+     */
+    private function trackQueries(Server $server, array $queries): array
+    {
+        $prior = \App\Models\QuerySnapshot::latestPerDigest($server->id);
+        $currentDigests = [];
+
+        foreach ($queries as &$q) {
+            $digest = $q['digest'] ?? '';
+            $currentDigests[$digest] = true;
+            $q['trend'] = $this->compareTrend($q, $prior[$digest] ?? null);
+        }
+        unset($q);
+
+        // Resueltas: estaban en una foto de los últimos 7 días y ya no aparecen
+        $resolved = [];
+        foreach ($prior as $digest => $snap) {
+            if (isset($currentDigests[$digest]) || $snap->seen_at->lt(now()->subDays(7))) {
+                continue;
+            }
+            $resolved[] = [
+                'db'         => $snap->db,
+                'query'      => $snap->query_preview,
+                'total_s'    => $snap->total_s,
+                'execs'      => $snap->execs,
+                'avg_ms'     => $snap->avg_ms,
+                'last_seen'  => $snap->seen_at,
+            ];
+        }
+
+        // Guardar nueva foto (throttle: una cada 15 min por servidor)
+        if (\Illuminate\Support\Facades\Cache::add("qsnap:{$server->id}", true, 900)) {
+            foreach ($queries as $q) {
+                \App\Models\QuerySnapshot::create([
+                    'server_id'     => $server->id,
+                    'digest'        => $q['digest'] ?? '',
+                    'db'            => $q['db'] ?? null,
+                    'query_preview' => mb_substr($q['query'] ?? '', 0, 500),
+                    'total_s'       => $q['total_s'],
+                    'execs'         => $q['execs'],
+                    'avg_ms'        => $q['avg_ms'],
+                    'rows_ratio'    => $q['ratio'],
+                    'seen_at'       => now(),
+                ]);
+            }
+            // Poda: conservar ~60 días de histórico
+            \App\Models\QuerySnapshot::where('server_id', $server->id)
+                ->where('seen_at', '<', now()->subDays(60))->delete();
+        }
+
+        return [$queries, $resolved];
+    }
+
+    /**
+     * Compara una consulta con su foto anterior. Usa el promedio (avg_ms) como
+     * termómetro de "salud" (los índices bajan el promedio) exigiendo un cambio
+     * ≥15% para no marcar ruido.
+     *
+     * @return array{state: string, label: string, delta_pct: ?int, since: ?string}
+     */
+    private function compareTrend(array $q, ?\App\Models\QuerySnapshot $prev): array
+    {
+        if (! $prev || $prev->seen_at->gt(now()->subMinutes(10))) {
+            // Sin referencia útil todavía (nueva, o la foto previa es de hace un rato)
+            return ['state' => $prev ? 'estable' : 'nueva',
+                'label' => $prev ? '● en seguimiento' : '✨ nueva en el ranking',
+                'delta_pct' => null, 'since' => $prev?->seen_at?->diffForHumans()];
+        }
+
+        $before = max(0.01, (float) $prev->avg_ms);
+        $now    = (float) $q['avg_ms'];
+        $pct    = (int) round(($now - $before) / $before * 100);
+
+        if ($pct <= -15) {
+            return ['state' => 'mejorando', 'label' => '✅ mejoró '.abs($pct).'%', 'delta_pct' => $pct, 'since' => $prev->seen_at->diffForHumans()];
+        }
+        if ($pct >= 15) {
+            return ['state' => 'empeorando', 'label' => '⚠️ empeoró '.$pct.'%', 'delta_pct' => $pct, 'since' => $prev->seen_at->diffForHumans()];
+        }
+
+        return ['state' => 'estable', 'label' => '● estable', 'delta_pct' => $pct, 'since' => $prev->seen_at->diffForHumans()];
     }
 
     /** Actividad de MySQL en vivo (JSON): alimenta el refresco automático. */

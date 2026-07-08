@@ -789,6 +789,11 @@ SH;
             return ['available' => false];
         }
 
+        // Offset (segundos vs UTC) del reloj de MySQL, para convertir sus horas
+        // a la zona del panel (America/Bogota) al mostrarlas.
+        $tzLine = trim($this->nonEmptyLines($s['QTZ'] ?? '')[0] ?? '');
+        $mysqlOffset = is_numeric($tzLine) ? (int) $tzLine : 0;
+
         // Info del servidor MySQL (versión, uptime, buffer pool, conexiones)
         $version = null; $uptime = null; $buffer = null; $maxConn = null;
         foreach ($this->nonEmptyLines($s['QSERVER'] ?? '') as $line) {
@@ -828,15 +833,16 @@ SH;
         unset($q);
 
         return [
-            'available' => true,
-            'via'       => $via,
-            'version'   => $version,
-            'uptime'    => $uptime,
-            'buffer'    => $buffer,
-            'max_conn'  => $maxConn,
-            'queries'   => $queries,
-            'users'     => $users,
-            'ddl'       => $this->fetchTableDdl($server, array_slice(array_keys($allTables), 0, 15)),
+            'available'    => true,
+            'via'          => $via,
+            'version'      => $version,
+            'uptime'       => $uptime,
+            'buffer'       => $buffer,
+            'max_conn'     => $maxConn,
+            'mysql_offset' => $mysqlOffset,
+            'queries'      => $queries,
+            'users'        => $users,
+            'ddl'          => $this->fetchTableDdl($server, array_slice(array_keys($allTables), 0, 15)),
         ];
     }
 
@@ -980,6 +986,8 @@ SH;
 {$detect}
 echo "==QVIA=="
 [ -n "\$MYSQL" ] && echo "\$VIA"
+echo "==QTZ=="
+[ -n "\$MYSQL" ] && \$MYSQL -N -B -e "SELECT TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), NOW())" 2>/dev/null
 echo "==QSERVER=="
 [ -n "\$MYSQL" ] && \$MYSQL -N -B -e "SELECT VERSION()" 2>/dev/null
 [ -n "\$MYSQL" ] && \$MYSQL -N -B -e "SHOW GLOBAL STATUS WHERE Variable_name='Uptime'" 2>/dev/null

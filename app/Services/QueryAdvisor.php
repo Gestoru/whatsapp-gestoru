@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Server;
+use Illuminate\Support\Carbon;
 
 /**
  * Analiza el reporte de consultas (queryReport) y produce, por consulta:
@@ -21,7 +22,12 @@ class QueryAdvisor
         }
         $totalAll = max(0.1, $totalAll);
 
+        // Delta para pasar la hora de MySQL a la zona del panel (America/Bogota).
+        $bogotaOffset = now()->utcOffset() * 60;               // segundos
+        $delta        = $bogotaOffset - (int) ($report['mysql_offset'] ?? 0);
+
         foreach ($queries as $i => &$q) {
+            $q['tables']        = $q['tables'] ?? [];
             $q['rank']          = $i + 1;
             $q['execs']         = (int) $q['execs'];
             $q['total_s']       = (float) $q['total_s'];
@@ -38,12 +44,29 @@ class QueryAdvisor
             $q['ratio']        = $q['rows_sent'] > 0 ? (int) round($q['rows_examined'] / $q['rows_sent']) : null;
             $q['no_index_pct'] = $q['execs'] > 0 ? (int) round($q['no_index'] / $q['execs'] * 100) : 0;
 
+            $q['first_seen_local'] = $this->toLocal($q['first_seen'] ?? '', $delta);
+            $q['last_seen_local']  = $this->toLocal($q['last_seen'] ?? '', $delta);
+
             [$q['severity'], $q['findings']] = $this->diagnose($q);
             $q['ai_prompt'] = $this->buildAiPrompt($q, $report, $server);
         }
         unset($q);
 
         return $queries;
+    }
+
+    /** Convierte una hora de MySQL a la zona del panel y la formatea (d/m H:i). */
+    private function toLocal(string $ts, int $deltaSeconds): ?string
+    {
+        $ts = trim($ts);
+        if ($ts === '' || $ts === '-') {
+            return null;
+        }
+        try {
+            return Carbon::parse($ts)->addSeconds($deltaSeconds)->format('d/m/Y H:i');
+        } catch (\Throwable) {
+            return $ts;
+        }
     }
 
     /** @return array{0: string, 1: array<int, string>} [severidad, hallazgos] */
@@ -125,7 +148,7 @@ class QueryAdvisor
             '- Filas examinadas: '.number_format($q['rows_examined']).' · Filas devueltas: '.number_format($q['rows_sent']).($q['ratio'] !== null ? ' (ratio '.number_format($q['ratio']).':1)' : ''),
             '- Ejecuciones sin usar índice: '.number_format($q['no_index']).' ('.$q['no_index_pct'].'%)',
             '- Tablas temporales en disco: '.number_format($q['tmp_disk']).' · Full joins: '.number_format($q['full_join']),
-            '- Vista por primera vez: '.$q['first_seen'].' · Última vez: '.$q['last_seen'],
+            '- Vista por primera vez: '.($q['first_seen_local'] ?? $q['first_seen']).' · Última vez: '.($q['last_seen_local'] ?? $q['last_seen']).' (hora Colombia)',
             '',
             '## Diagnóstico preliminar del panel',
         ];
