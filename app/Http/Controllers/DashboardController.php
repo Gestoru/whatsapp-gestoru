@@ -81,13 +81,34 @@ class DashboardController extends Controller
         $data['processes'] = ['cpu' => [], 'mem' => []];
         $data['slow']      = ['enabled' => false, 'file' => null, 'top' => []];
 
+        $data['domainMeta'] = [];
+        $data['byProject']  = [];
+
         if (! $data['needsCredentials']) {
             try {
                 $data['metrics']   = $this->monitor->metrics($server);
                 $data['projects']  = $this->monitor->projects($server);
-                $data['domains']   = $this->monitor->domains($server);
+                $map               = $this->monitor->siteMap($server);
+                $data['domains']   = array_keys($map['domains']);
+                $data['domainMeta'] = $map['domains'];
+                $data['byProject']  = $map['byProject'];
                 $data['processes'] = $this->monitor->topProcesses($server);
                 $data['slow']      = $this->monitor->slowQueries($server);
+
+                // Adjuntar a cada proyecto los dominios que le pertenecen
+                foreach ($data['projects'] as &$p) {
+                    $p['domains'] = $map['byProject'][$p['name']] ?? [];
+                }
+                unset($p);
+
+                // Icono por origen para pintar cada dominio (se computa aquí
+                // para que la vista no lleve lógica).
+                $srcIcon = ['nginx' => '🟢', 'apache' => '🟢', 'cert' => '🔒', 'docker' => '🐳'];
+                foreach ($data['domainMeta'] as $name => &$info) {
+                    $info['icons'] = collect($info['sources'])
+                        ->map(fn ($s) => $srcIcon[$s] ?? '•')->unique()->implode('');
+                }
+                unset($info);
             } catch (\Throwable $e) {
                 $data['error'] = $e->getMessage();
             }

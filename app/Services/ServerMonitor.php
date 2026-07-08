@@ -173,42 +173,135 @@ SH;
     }
 
     /**
-     * Dominios detectados en nginx / apache.
+     * Dominios detectados (lista plana). Deriva de siteMap().
      *
      * @return array<int, string>
      */
     public function domains(Server $server): array
     {
-        $raw     = $this->cachedRun($server, 'domains', 600, $this->domainsScript());
-        $domains = [];
+        return array_keys($this->siteMap($server)['domains']);
+    }
 
-        foreach (preg_split('/\r?\n/', trim($raw)) as $line) {
-            $line = strtolower(trim($line));
-            if ($this->isRealDomain($line)) {
-                $domains[$line] = $line;
+    /**
+     * Mapa de sitios del servidor: cada dominio REAL alojado aquí, con su
+     * origen (dónde se encontró) y el proyecto Docker al que pertenece.
+     * Solo lee fuentes autoritativas (nginx, apache, certificados y las
+     * variables/etiquetas de Docker que denotan hosting) — nada de raspar
+     * cualquier texto de las variables de entorno.
+     *
+     * @return array{domains: array<string, array{sources: array<int,string>, projects: array<int,string>}>, byProject: array<string, array<int,string>>}
+     */
+    public function siteMap(Server $server): array
+    {
+        $raw = $this->cachedRun($server, 'sitemap', 600, $this->domainsScript());
+        $s   = $this->splitSections($raw);
+
+        $domains = [];
+        foreach ($this->nonEmptyLines($s['MAP'] ?? '') as $line) {
+            $p = explode("\t", $line);
+            if (count($p) < 3) {
+                continue;
+            }
+            [$source, $project, $name] = $p;
+
+            $name = strtolower(trim($name));
+            $name = preg_replace('/^\*\./', '', $name);   // *.dominio.com → dominio.com
+            $name = preg_replace('#^https?://#', '', $name);
+            $name = preg_replace('#[/:].*$#', '', $name);  // quita puerto y ruta
+            $name = trim($name, '.');
+
+            if (! $this->isRealDomain($name)) {
+                continue;
+            }
+
+            $domains[$name]['sources'][$source] = true;
+            if ($project !== '' && $project !== '-') {
+                $domains[$name]['projects'][$project] = true;
             }
         }
 
         ksort($domains);
 
-        return array_values($domains);
+        $out = [];
+        $byProject = [];
+        foreach ($domains as $name => $info) {
+            $sources  = array_keys($info['sources'] ?? []);
+            $projects = array_keys($info['projects'] ?? []);
+            $out[$name] = ['sources' => $sources, 'projects' => $projects];
+            foreach ($projects as $proj) {
+                $byProject[$proj][$name] = true;
+            }
+        }
+
+        return [
+            'domains'   => $out,
+            'byProject' => array_map(fn ($m) => array_keys($m), $byProject),
+        ];
     }
 
-    /** Filtra placeholders y valores que no son dominios reales. */
+    /**
+     * Filtra lo que NO es un dominio real alojado aquí: nombres de archivo
+     * disfrazados (.png, .yml, .env…), placeholders y dominios de servicios
+     * de terceros que las apps solo consumen (github.com, gmail.com…).
+     */
     private function isRealDomain(string $d): bool
     {
-        if ($d === '' || str_starts_with($d, '*') || str_starts_with($d, '_')) {
-            return false;
-        }
-        // Placeholders y dominios de ejemplo/locales
-        $blacklist = ['localhost', 'example.com', 'example.org', 'example.net',
-            'test.com', 'domain.tld', 'yourdomain.com', 'localhost.localdomain'];
-        if (in_array($d, $blacklist, true) || str_ends_with($d, '.local') || str_ends_with($d, '.localdomain')) {
+        $d = ltrim($d, '*.');
+        if ($d === '' || str_starts_with($d, '_')) {
             return false;
         }
 
-        // Debe parecer un dominio válido (etiqueta.tld)
-        return (bool) preg_match('/^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/', $d);
+        // Forma de dominio válida (etiqueta.tld)
+        if (! preg_match('/^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/', $d)) {
+            return false;
+        }
+
+        // "TLD" que en realidad es una extensión de archivo o basura de config
+        $parts = explode('.', $d);
+        $tld   = end($parts);
+        $fakeTlds = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'css', 'js', 'mjs',
+            'cjs', 'json', 'yml', 'yaml', 'env', 'xml', 'txt', 'md', 'sh', 'bash', 'conf',
+            'cfg', 'ini', 'toml', 'lock', 'sql', 'gz', 'xz', 'tar', 'zip', 'tgz', 'asc',
+            'key', 'pem', 'crt', 'cert', 'log', 'tpl', 'php', 'html', 'htm', 'ts', 'tsx',
+            'jsx', 'map', 'woff', 'woff2', 'ttf', 'eot', 'otf', 'pdf', 'csv', 'bak', 'db',
+            'sqlite', 'sqlite3', 'dist', 'sample', 'example', 'tmpl', 'mp4', 'mp3', 'webm',
+            'py', 'rb', 'go', 'rs', 'java', 'class', 'jar', 'war', 'deb', 'rpm', 'iso',
+            'img', 'bin', 'dat', 'old', 'swp', 'pid', 'sock', 'el', 'vue', 'scss', 'less'];
+        if (in_array($tld, $fakeTlds, true)) {
+            return false;
+        }
+
+        // Placeholders, dominios locales/internos
+        $blacklist = ['localhost', 'example.com', 'example.org', 'example.net', 'test.com',
+            'domain.tld', 'yourdomain.com', 'localhost.localdomain', 'host.docker.internal'];
+        if (in_array($d, $blacklist, true)) {
+            return false;
+        }
+        foreach (['.local', '.localdomain', '.internal', '.svc', '.arpa', '.test', '.invalid', '.example'] as $suf) {
+            if (str_ends_with($d, $suf)) {
+                return false;
+            }
+        }
+
+        // Servicios de terceros que las apps CONSUMEN (no alojan aquí)
+        $services = ['github.com', 'githubusercontent.com', 'gmail.com', 'hotmail.com',
+            'outlook.com', 'yahoo.com', 'slack.com', 'php.net', 'portainer.io', 'docker.io',
+            'docker.com', 'frankenphp.dev', 'dapta.ai', 'digitaloceanspaces.com',
+            'contabostorage.com', 'googleapis.com', 'google.com', 'gstatic.com',
+            'cloudflare.com', 'cloudflare.net', 'jsdelivr.net', 'amazonaws.com', 'sentry.io',
+            'npmjs.com', 'unpkg.com', 'letsencrypt.org', 'ubuntu.com', 'debian.org',
+            'nginx.org', 'nginx.com', 'apache.org', 'mysql.com', 'mariadb.org', 'redis.io',
+            'mongodb.com', 'cloudinary.com', 'sendgrid.net', 'mailgun.org', 'twilio.com',
+            'stripe.com', 'paypal.com', 'facebook.com', 'fbcdn.net', 'twitter.com', 'x.com',
+            'linkedin.com', 'microsoft.com', 'office.com', 'apple.com', 'mozilla.org',
+            'w3.org', 'schema.org', 'bootstrapcdn.com', 'fontawesome.com'];
+        foreach ($services as $svc) {
+            if ($d === $svc || str_ends_with($d, '.'.$svc)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -1067,24 +1160,43 @@ SH;
 
     private function domainsScript(): string
     {
+        // Emite líneas "origen<TAB>proyecto<TAB>dominio". Solo fuentes que
+        // realmente indican un sitio alojado aquí: server_name de nginx,
+        // vhosts de apache, certificados Let's Encrypt y —en Docker— las
+        // reglas de Traefik y las variables que denotan el dominio propio
+        // (VIRTUAL_HOST, LETSENCRYPT_HOST, APP_URL…). NADA de raspar cualquier
+        // texto de las variables de entorno (eso metía github.com, tar.xz…).
         return <<<'SH'
-{
-  # nginx: configuración efectiva completa (incluye todos los include/)
-  nginx -T 2>/dev/null | grep -hoE 'server_name[[:space:]]+[^;]+;' | sed 's/server_name//;s/;//' | tr ' ' '\n'
-  # nginx: por si -T no está disponible, leer archivos directamente
-  grep -rhoE 'server_name[[:space:]]+[^;]+;' /etc/nginx 2>/dev/null | sed 's/server_name//;s/;//' | tr ' ' '\n'
-  # Apache: virtual hosts efectivos y directivas
-  { apache2ctl -S 2>/dev/null || apachectl -S 2>/dev/null || httpd -S 2>/dev/null; } | grep -oE 'namevhost [^ ]+' | awk '{print $2}'
-  grep -rhoE '(ServerName|ServerAlias)[[:space:]]+[^ ]+' /etc/apache2 /etc/httpd 2>/dev/null | awk '{print $2}'
-  # Certificados Let's Encrypt = dominios con HTTPS (fuente muy confiable)
-  ls /etc/letsencrypt/live 2>/dev/null | grep -v README
-  # Docker: dominios en labels de Traefik y variables VIRTUAL_HOST
-  if command -v docker >/dev/null 2>&1; then
-    for c in $(docker ps -q 2>/dev/null); do
-      docker inspect "$c" --format '{{range .Config.Env}}{{println .}}{{end}}{{range $k,$v := .Config.Labels}}{{println $v}}{{end}}' 2>/dev/null
-    done | grep -oE '([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}'
-  fi
-} 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -vE '^\*|^$' | sort -u
+echo "==MAP=="
+# ── nginx: server_name de la configuración efectiva y de los archivos ──
+{ nginx -T 2>/dev/null; cat /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*.conf 2>/dev/null; } \
+  | grep -hoE 'server_name[[:space:]]+[^;]+;' | sed 's/server_name//;s/;//' | tr ' ' '\n' \
+  | while read -r d; do [ -n "$d" ] && printf 'nginx\t-\t%s\n' "$d"; done
+# ── apache: vhosts efectivos y directivas ServerName/ServerAlias ──
+{ apache2ctl -S 2>/dev/null || apachectl -S 2>/dev/null || httpd -S 2>/dev/null; } \
+  | grep -oE 'namevhost [^ ]+' | awk '{print $2}' \
+  | while read -r d; do [ -n "$d" ] && printf 'apache\t-\t%s\n' "$d"; done
+grep -rhoE '(ServerName|ServerAlias)[[:space:]]+[^ ]+' /etc/apache2 /etc/httpd 2>/dev/null | awk '{print $2}' \
+  | while read -r d; do [ -n "$d" ] && printf 'apache\t-\t%s\n' "$d"; done
+# ── certificados Let's Encrypt (fuente muy confiable: hay HTTPS emitido) ──
+ls /etc/letsencrypt/live 2>/dev/null | grep -v README \
+  | while read -r d; do [ -n "$d" ] && printf 'cert\t-\t%s\n' "$d"; done
+# ── Docker: solo reglas de enrutado reales, agrupadas por proyecto compose ──
+if command -v docker >/dev/null 2>&1; then
+  for c in $(docker ps -q 2>/dev/null); do
+    proj=$(docker inspect "$c" --format '{{index .Config.Labels "com.docker.compose.project"}}' 2>/dev/null)
+    [ -z "$proj" ] && proj=$(docker inspect "$c" --format '{{.Name}}' 2>/dev/null | sed 's#^/##')
+    # Traefik: Host(`dominio`)
+    docker inspect "$c" --format '{{range $k,$v := .Config.Labels}}{{println $v}}{{end}}' 2>/dev/null \
+      | grep -oE 'Host\(`[^`]+`\)' | grep -oE '`[^`]+`' | tr -d '`' \
+      | while read -r d; do [ -n "$d" ] && printf 'docker\t%s\t%s\n' "$proj" "$d"; done
+    # nginx-proxy / apps: variables que SON el dominio propio del sitio
+    docker inspect "$c" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null \
+      | grep -E '^(VIRTUAL_HOST|LETSENCRYPT_HOST|APP_URL|APP_DOMAIN|SITE_URL|SESSION_DOMAIN|SANCTUM_STATEFUL_DOMAINS)=' \
+      | sed 's/^[^=]*=//' | tr ', ' '\n\n' \
+      | while read -r d; do [ -n "$d" ] && printf 'docker\t%s\t%s\n' "$proj" "$d"; done
+  done
+fi
 SH;
     }
 

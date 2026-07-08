@@ -136,13 +136,21 @@
                 <div class="empty" style="padding:30px"><span class="muted">No se detectaron proyectos, contenedores ni servicios conocidos.</span></div>
             @else
                 <table>
-                    <thead><tr><th>Tipo</th><th>Nombre</th><th>Detalle</th></tr></thead>
+                    <thead><tr><th>Tipo</th><th>Nombre</th><th>Detalle</th><th>Dominios</th></tr></thead>
                     <tbody>
                     @foreach($projects as $p)
                         <tr>
                             <td><span class="tag tag-{{ $p['type'] }}">{{ $p['type'] }}</span></td>
                             <td style="font-weight:600">{{ $p['name'] }}</td>
                             <td class="muted tiny" style="font-family:ui-monospace,monospace">{{ $p['detail'] }}</td>
+                            <td>
+                                @forelse($p['domains'] ?? [] as $pd)
+                                    <a href="{{ route('dashboard.servers.domain', $server) }}?d={{ urlencode($pd) }}"
+                                       class="pill tiny" style="margin:2px 3px 2px 0;font-family:ui-monospace,monospace">🌐 {{ $pd }}</a>
+                                @empty
+                                    <span class="muted tiny">—</span>
+                                @endforelse
+                            </td>
                         </tr>
                     @endforeach
                     </tbody>
@@ -151,12 +159,18 @@
         </div>
 
         {{-- ── Dominios ── --}}
-        <h2><span class="section-ic">🌐</span> Dominios
+        <h2><span class="section-ic">🌐</span> Dominios alojados
             <span class="muted tiny" style="font-weight:400">({{ count($domains) }} en {{ count($domainGroups) }} dominios raíz) · clic en un subdominio para su reporte</span>
         </h2>
         @if(empty($domains))
-            <div class="list-card" style="padding:14px"><span class="muted tiny">No se detectaron dominios en la configuración de nginx/apache/Docker.</span></div>
+            <div class="list-card" style="padding:14px"><span class="muted tiny">No se detectaron dominios reales en la configuración de nginx/apache/Docker de este servidor.</span></div>
         @else
+            <div class="row" style="gap:14px;margin-bottom:10px;flex-wrap:wrap">
+                <span class="tiny muted">🟢 servidor web</span>
+                <span class="tiny muted">🔒 certificado SSL activo</span>
+                <span class="tiny muted">🐳 contenedor</span>
+                <span class="tiny muted" style="margin-left:auto">solo se listan dominios realmente alojados aquí (se filtran servicios externos y archivos)</span>
+            </div>
             <div class="row" style="justify-content:space-between;margin-bottom:10px;gap:8px">
                 <input type="text" id="dom-filter" placeholder="🔎 Buscar dominio o subdominio…" autocomplete="off" style="max-width:340px">
                 <div class="row" style="gap:6px">
@@ -174,11 +188,16 @@
                         </div>
                         <div class="dom-group-body hidden" style="padding:10px 12px">
                             @foreach($subs as $d)
+                                @php($meta = $domainMeta[$d] ?? ['icons' => '', 'projects' => []])
                                 <a href="{{ route('dashboard.servers.domain', $server) }}?d={{ urlencode($d) }}"
                                    class="dom-sub" data-name="{{ strtolower($d) }}"
                                    style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;font-size:13px;font-family:ui-monospace,monospace">
                                     <span>{{ $d === $apex ? '🌐' : '↳' }}</span>
                                     <span>{{ $d }}</span>
+                                    @if($meta['icons'])<span title="dónde se encontró">{{ $meta['icons'] }}</span>@endif
+                                    @foreach($meta['projects'] as $proj)
+                                        <span class="tag tag-docker" style="font-size:10px">{{ $proj }}</span>
+                                    @endforeach
                                     <span class="muted" style="margin-left:auto">ver reporte →</span>
                                 </a>
                             @endforeach
