@@ -12,6 +12,7 @@ app.use(express.json({ limit: '50mb' }));
 let wpClient    = null;
 let isReady     = false;
 let isInitializing = false;
+let currentQr   = null;   // último QR (data URL) para exponerlo por /status
 
 // ── Webhook hacia Laravel ─────────────────────────────────────────────────────
 async function sendWebhook(type, data = {}) {
@@ -38,12 +39,28 @@ async function sendWebhook(type, data = {}) {
 }
 
 // ── Inicializar cliente WhatsApp ──────────────────────────────────────────────
+// Detecta el Chromium disponible: variable de entorno, o rutas comunes del
+// sistema, o (si nada existe) el que trae puppeteer por defecto.
+function chromiumPath() {
+    if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
+    const fs = require('fs');
+    const candidates = [
+        '/usr/bin/chromium-browser', '/usr/bin/chromium',
+        '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable',
+        '/snap/bin/chromium', '/bin/chromium-browser',
+    ];
+    for (const p of candidates) {
+        try { if (fs.existsSync(p)) return p; } catch (_) {}
+    }
+    return undefined;   // usa el Chromium incluido en puppeteer
+}
+
 function buildClient() {
     return new Client({
         authStrategy: new LocalAuth({ clientId: 'wpp-gestoru' }),
         puppeteer: {
             headless: true,
-            executablePath: '/bin/chromium-browser',
+            executablePath: chromiumPath(),
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
@@ -63,6 +80,7 @@ function attachEvents(client) {
     client.on('qr', async (qr) => {
         console.log('[whatsapp] QR generado');
         const qrDataUrl = await qrcode.toDataURL(qr);
+        currentQr = qrDataUrl;                       // disponible por GET /status
         await sendWebhook('qr_update', { qr_data_url: qrDataUrl });
     });
 
@@ -74,6 +92,7 @@ function attachEvents(client) {
     // Listo para operar
     client.on('ready', async () => {
         isReady        = true;
+        currentQr      = null;
         isInitializing = false;
         console.log('[whatsapp] Conectado y listo');
         const session = client.info?.wid?.user ?? null;
@@ -222,6 +241,7 @@ app.get('/status', (_req, res) => {
         connected:    isReady,
         initializing: isInitializing,
         session:      wpClient?.info?.wid?.user ?? null,
+        qr:           isReady ? null : currentQr,   // QR directo, sin depender del webhook
     });
 });
 

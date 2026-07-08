@@ -33,7 +33,7 @@ class ConfigController extends Controller
             'githubRepoCount'  => $githubRepoCount,
             // Alertas por WhatsApp
             'enabled'      => Setting::boolean('alerts_enabled'),
-            'phone'        => Setting::get('alerts_phone'),
+            'phone'        => Setting::get('alerts_phones') ?: Setting::get('alerts_phone'),
             'cpu'          => Setting::get('alert_cpu', 85),
             'disk'         => Setting::get('alert_disk', 85),
             'mem'          => Setting::get('alert_mem', 90),

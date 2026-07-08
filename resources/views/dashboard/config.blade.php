@@ -135,8 +135,11 @@
                         <label for="en" style="margin:0">Activar alertas por WhatsApp</label>
                     </div>
                     <div class="field">
-                        <label>Número de WhatsApp <span class="muted">(con código de país, ej. 57)</span></label>
-                        <input name="alerts_phone" value="{{ old('alerts_phone', $phone) }}" placeholder="573001234567" inputmode="numeric">
+                        <label>Números que recibirán la alerta <span class="muted">(con código de país; uno por línea o separados por coma)</span></label>
+                        <textarea name="alerts_phones" rows="3" placeholder="573001234567&#10;573109876543">{{ old('alerts_phones', $phone) }}</textarea>
+                        <div class="tiny muted" style="margin-top:5px">
+                            El WhatsApp <strong>vinculado</strong> (arriba) es quien <strong>envía</strong>; estos números son quienes <strong>reciben</strong> la alerta. Deben ser distintos del número vinculado.
+                        </div>
                     </div>
                     <h2 style="font-size:14px;margin:8px 0 12px;color:var(--muted)">¿Cuándo avisar?</h2>
                     <div class="form-grid">

@@ -23,9 +23,27 @@ class AlertService
 
     public function phone(): ?string
     {
-        $p = Setting::get('alerts_phone');
+        return $this->phones()[0] ?? null;
+    }
 
-        return $p ? preg_replace('/\D/', '', (string) $p) : null;
+    /**
+     * Lista de números destinatarios (a quiénes les llega la alerta).
+     * Acepta varios separados por coma, salto de línea o punto y coma.
+     *
+     * @return array<int, string>
+     */
+    public function phones(): array
+    {
+        $raw = (string) (Setting::get('alerts_phones') ?: Setting::get('alerts_phone'));
+
+        // Un número por línea/coma/punto y coma. Cada uno puede traer espacios
+        // o guiones (57 310 987 6543) que se limpian a solo dígitos.
+        return collect(preg_split('/[\n\r,;]+/', $raw))
+            ->map(fn ($p) => preg_replace('/\D/', '', (string) $p))
+            ->filter(fn ($p) => strlen($p) >= 8)   // número válido
+            ->unique()
+            ->values()
+            ->all();
     }
 
     public function whatsappConfigured(): bool
@@ -71,20 +89,31 @@ class AlertService
     /** Envía un mensaje de prueba. @return array{ok: bool, message: string} */
     public function sendTest(): array
     {
-        if (! $this->phone()) {
-            return ['ok' => false, 'message' => 'Configura primero el número de WhatsApp.'];
+        $phones = $this->phones();
+        if (empty($phones)) {
+            return ['ok' => false, 'message' => 'Registra primero al menos un número de WhatsApp.'];
         }
         if (! $this->whatsappConfigured()) {
-            return ['ok' => false, 'message' => 'Falta configurar VPS_API_URL (el servidor de WhatsApp). Sin eso no se puede enviar.'];
+            return ['ok' => false, 'message' => 'Falta configurar el servidor de WhatsApp. Sin eso no se puede enviar.'];
         }
 
-        try {
-            $this->wa->sendMessage($this->waAddress(), "✅ *Prueba de alertas* — Infraestructura Gestoru\nSi ves este mensaje, las alertas por WhatsApp están funcionando.");
-
-            return ['ok' => true, 'message' => 'Mensaje de prueba enviado a '.$this->phone().'. Revisa tu WhatsApp.'];
-        } catch (\Throwable $e) {
-            return ['ok' => false, 'message' => 'No se pudo enviar: '.$e->getMessage().' (¿está conectado el WhatsApp en el VPS?)'];
+        $msg  = "✅ *Prueba de alertas* — Infraestructura Gestoru\nSi ves este mensaje, las alertas por WhatsApp están funcionando.";
+        $sent = 0;
+        $lastError = null;
+        foreach ($phones as $p) {
+            try {
+                $this->wa->sendMessage($p.'@c.us', $msg);
+                $sent++;
+            } catch (\Throwable $e) {
+                $lastError = $e->getMessage();
+            }
         }
+
+        if ($sent > 0) {
+            return ['ok' => true, 'message' => "Mensaje de prueba enviado a {$sent} número(s). Revisa tu WhatsApp."];
+        }
+
+        return ['ok' => false, 'message' => 'No se pudo enviar: '.$lastError.' (¿está conectado el WhatsApp en el servidor?)'];
     }
 
     // ── Interno ──────────────────────────────────────────────────────────────
@@ -103,16 +132,13 @@ class AlertService
             return;
         }
 
-        try {
-            $this->wa->sendMessage($this->waAddress(), $message);
-        } catch (\Throwable $e) {
-            Log::warning('Alerta WhatsApp no enviada', ['server' => $server->id, 'type' => $type, 'error' => $e->getMessage()]);
+        // Envía la alerta a TODOS los números registrados.
+        foreach ($this->phones() as $p) {
+            try {
+                $this->wa->sendMessage($p.'@c.us', $message);
+            } catch (\Throwable $e) {
+                Log::warning('Alerta WhatsApp no enviada', ['server' => $server->id, 'type' => $type, 'to' => $p, 'error' => $e->getMessage()]);
+            }
         }
-    }
-
-    /** Número en formato whatsapp-web.js (con @c.us). */
-    private function waAddress(): string
-    {
-        return $this->phone().'@c.us';
     }
 }

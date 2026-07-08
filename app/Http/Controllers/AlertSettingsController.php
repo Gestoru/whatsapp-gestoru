@@ -14,7 +14,7 @@ class AlertSettingsController extends Controller
     {
         return view('dashboard.alerts', [
             'enabled'       => Setting::boolean('alerts_enabled'),
-            'phone'         => Setting::get('alerts_phone'),
+            'phone'         => Setting::get('alerts_phones') ?: Setting::get('alerts_phone'),
             'cpu'           => Setting::get('alert_cpu', 85),
             'disk'          => Setting::get('alert_disk', 85),
             'mem'           => Setting::get('alert_mem', 90),
@@ -27,6 +27,7 @@ class AlertSettingsController extends Controller
     {
         $data = $request->validate([
             'alerts_enabled' => 'nullable|boolean',
+            'alerts_phones'  => 'nullable|string|max:1000',
             'alerts_phone'   => 'nullable|string|max:30',
             'alert_cpu'      => 'required|integer|min:1|max:100',
             'alert_disk'     => 'required|integer|min:1|max:100',
@@ -35,7 +36,8 @@ class AlertSettingsController extends Controller
         ]);
 
         Setting::put('alerts_enabled', $request->boolean('alerts_enabled') ? '1' : '0');
-        Setting::put('alerts_phone', preg_replace('/\D/', '', (string) ($data['alerts_phone'] ?? '')));
+        // Varios destinatarios (uno por línea/coma); se normalizan al leerlos.
+        Setting::put('alerts_phones', trim((string) ($data['alerts_phones'] ?? $data['alerts_phone'] ?? '')));
         Setting::put('alert_cpu', $data['alert_cpu']);
         Setting::put('alert_disk', $data['alert_disk']);
         Setting::put('alert_mem', $data['alert_mem']);
@@ -81,7 +83,8 @@ class AlertSettingsController extends Controller
             if ($out['connected']) {
                 \Illuminate\Support\Facades\Cache::forget('wa_qr');
             } else {
-                $out['qr'] = \Illuminate\Support\Facades\Cache::get('wa_qr');
+                // QR directo desde el servidor (/status); si no, el del webhook.
+                $out['qr'] = ($s['qr'] ?? null) ?: \Illuminate\Support\Facades\Cache::get('wa_qr');
             }
         }
 
