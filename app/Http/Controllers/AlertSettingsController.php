@@ -73,13 +73,25 @@ class AlertSettingsController extends Controller
     public function waStatus()
     {
         $configured = (bool) \App\Services\VpsWhatsAppService::apiUrl();
-        $out = ['configured' => $configured, 'connected' => false, 'session' => null, 'qr' => null, 'error' => null];
+        $out = [
+            'configured'   => $configured,
+            'reachable'    => false,
+            'connected'    => false,
+            'initializing' => false,
+            'session'      => null,
+            'qr'           => null,
+            'pair_code'    => null,
+            'error'        => null,
+        ];
 
         if ($configured) {
             $s = app(\App\Services\VpsWhatsAppService::class)->status();
-            $out['connected'] = (bool) ($s['connected'] ?? false);
-            $out['session']   = $s['session'] ?? \Illuminate\Support\Facades\Cache::get('wa_session');
-            $out['error']     = $s['error'] ?? null;
+            $out['reachable']    = (bool) ($s['reachable'] ?? false);
+            $out['connected']    = (bool) ($s['connected'] ?? false);
+            $out['initializing'] = (bool) ($s['initializing'] ?? false);
+            $out['session']      = $s['session'] ?? \Illuminate\Support\Facades\Cache::get('wa_session');
+            $out['error']        = $s['error'] ?? null;
+            $out['pair_code']    = $s['pair_code'] ?? null;
             if ($out['connected']) {
                 \Illuminate\Support\Facades\Cache::forget('wa_qr');
             } else {
@@ -96,6 +108,25 @@ class AlertSettingsController extends Controller
     {
         try {
             app(\App\Services\VpsWhatsAppService::class)->requestQr();
+
+            return response()->json(['ok' => true]);
+        } catch (\Throwable $e) {
+            return response()->json(['ok' => false, 'error' => 'No se pudo contactar el servidor de WhatsApp: '.$e->getMessage()]);
+        }
+    }
+
+    /** Pide un código de vinculación (sin QR) para el número indicado. */
+    public function waPair(Request $request)
+    {
+        $data = $request->validate(['phone' => 'required|string|max:30']);
+        $phone = preg_replace('/\D/', '', $data['phone']);
+
+        if (strlen((string) $phone) < 8) {
+            return response()->json(['ok' => false, 'error' => 'Número inválido. Escríbelo con código de país (ej: 57 300…).']);
+        }
+
+        try {
+            app(\App\Services\VpsWhatsAppService::class)->requestPair($phone);
 
             return response()->json(['ok' => true]);
         } catch (\Throwable $e) {

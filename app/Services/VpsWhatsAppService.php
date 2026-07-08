@@ -67,15 +67,22 @@ class VpsWhatsAppService
         try {
             $r = $this->client->get('status');
 
-            return json_decode($r->getBody()->getContents(), true) ?? [];
+            return (json_decode($r->getBody()->getContents(), true) ?? []) + ['reachable' => true];
         } catch (\Throwable $e) {
-            return ['connected' => false, 'error' => $e->getMessage()];
+            // El servidor de WhatsApp no respondió (apagado, puerto, red).
+            return ['connected' => false, 'reachable' => false, 'error' => $e->getMessage()];
         }
     }
 
     public function requestQr(): array
     {
         return $this->post('request-qr');
+    }
+
+    /** Pide un código de vinculación (modo "vincular con número", sin QR). */
+    public function requestPair(string $phone): array
+    {
+        return $this->post('request-pair', ['phone' => $phone]);
     }
 
     public function disconnect(): array

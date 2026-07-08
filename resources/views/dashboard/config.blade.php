@@ -105,18 +105,34 @@
 
                 @if($waConfigured)
                     <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px">
-                        <div class="row" style="gap:10px">
-                            <button id="wa-qr-btn" class="btn btn-sm" type="button">📱 Vincular WhatsApp (mostrar QR)</button>
+                        <div class="row" style="gap:10px;flex-wrap:wrap">
+                            <button id="wa-qr-btn" class="btn btn-sm" type="button">📱 Vincular con QR</button>
+                            <button id="wa-pair-btn" class="btn btn-sm" type="button">🔢 Vincular con código</button>
                             <form method="POST" action="{{ route('dashboard.alerts.wa.disconnect') }}" style="display:inline"
                                   onsubmit="return confirm('¿Desconectar la sesión de WhatsApp?')">
                                 @csrf
                                 <button class="btn btn-sm btn-danger">Desconectar</button>
                             </form>
                         </div>
+
+                        {{-- Modo QR --}}
                         <div id="wa-qr-box" class="hidden" style="margin-top:14px;text-align:center">
                             <p class="muted tiny">En tu teléfono: WhatsApp → <strong>Dispositivos vinculados</strong> → <strong>Vincular un dispositivo</strong>, y escanea:</p>
                             <img id="wa-qr-img" alt="QR de WhatsApp" style="width:240px;height:240px;background:#fff;border-radius:12px;padding:8px;object-fit:contain">
                             <p class="muted tiny" id="wa-qr-hint">Generando el código…</p>
+                        </div>
+
+                        {{-- Modo código de vinculación --}}
+                        <div id="wa-pair-box" class="hidden" style="margin-top:14px">
+                            <p class="muted tiny">Escribe el número del teléfono que <strong>enviará</strong> las alertas (con código de país, solo dígitos) y pulsa «Generar código»:</p>
+                            <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+                                <input id="wa-pair-phone" class="input" style="max-width:220px" placeholder="Ej: 573001234567" inputmode="numeric">
+                                <button id="wa-pair-go" class="btn btn-sm" type="button">Generar código</button>
+                            </div>
+                            <div style="margin-top:14px;text-align:center">
+                                <div id="wa-pair-code" style="font-size:30px;font-weight:800;letter-spacing:6px;font-family:monospace;color:var(--accent,#8b7bff)"></div>
+                                <p class="muted tiny" id="wa-pair-hint">En ese teléfono: WhatsApp → <strong>Dispositivos vinculados</strong> → <strong>Vincular un dispositivo</strong> → <strong>Vincular con número de teléfono</strong>, y escribe el código.</p>
+                            </div>
                         </div>
                     </div>
                 @else
@@ -158,11 +174,13 @@
                         📩 También te avisa si un servidor <strong style="color:var(--text)">deja de responder</strong>. Se revisa cada 5 minutos.
                     </div>
                     <div class="row" style="justify-content:flex-end;gap:8px">
-                        <button formaction="{{ route('dashboard.alerts.test') }}" formmethod="POST" class="btn" @disabled(!$waConfigured)>📤 Enviar prueba</button>
+                        {{-- «Enviar prueba» va en su propio formulario (POST), aparte del PUT de guardar --}}
+                        <button form="wa-test-form" class="btn" @disabled(!$waConfigured)>📤 Enviar prueba</button>
                         <button class="btn btn-primary">Guardar alertas</button>
                     </div>
                 </div>
             </form>
+            <form id="wa-test-form" method="POST" action="{{ route('dashboard.alerts.test') }}">@csrf</form>
         </section>
 
         {{-- ══ GODADDY ══ --}}
@@ -307,11 +325,18 @@
         const badge = document.getElementById('wa-badge-txt');
         const dot   = document.getElementById('wa-dot');
         if(!badge) return;
-        const qrBtn = document.getElementById('wa-qr-btn');
-        const qrBox = document.getElementById('wa-qr-box');
-        const qrImg = document.getElementById('wa-qr-img');
-        const qrHint= document.getElementById('wa-qr-hint');
-        let wantQr = false;
+        const qrBtn   = document.getElementById('wa-qr-btn');
+        const qrBox   = document.getElementById('wa-qr-box');
+        const qrImg   = document.getElementById('wa-qr-img');
+        const qrHint  = document.getElementById('wa-qr-hint');
+        const pairBtn = document.getElementById('wa-pair-btn');
+        const pairBox = document.getElementById('wa-pair-box');
+        const pairGo  = document.getElementById('wa-pair-go');
+        const pairPh  = document.getElementById('wa-pair-phone');
+        const pairOut = document.getElementById('wa-pair-code');
+        const pairHint= document.getElementById('wa-pair-hint');
+        const csrf    = document.querySelector('meta[name=csrf-token]').content;
+        let mode = null;   // 'qr' | 'pair' | null
         const setDot = c => { dot.style.background = c; dot.style.boxShadow = '0 0 8px '+c; };
 
         async function poll(){
@@ -319,23 +344,66 @@
                 const r = await fetch('{{ route('dashboard.alerts.wa.status') }}', {headers:{Accept:'application/json'}});
                 const d = await r.json();
                 if(!d.configured){ badge.textContent='sin servidor'; setDot('var(--muted)'); return; }
-                if(d.error && !d.connected){ badge.textContent='servidor no responde'; setDot('var(--bad)'); }
-                else if(d.connected){
+                if(d.connected){
                     badge.textContent = 'Conectado' + (d.session ? ' · '+d.session : ''); setDot('var(--ok)');
-                    if(qrBox){ qrBox.classList.add('hidden'); } wantQr=false;
-                } else {
-                    badge.textContent='esperando vinculación'; setDot('var(--warn)');
+                    qrBox && qrBox.classList.add('hidden');
+                    pairBox && pairBox.classList.add('hidden');
+                    mode = null; return;
                 }
-                if(wantQr && d.qr && qrImg){ qrImg.src = d.qr; qrHint.textContent='Escanéalo antes de que caduque.'; }
+                if(!d.reachable){
+                    badge.textContent='servidor no responde'; setDot('var(--bad)');
+                    if(mode==='qr'  && qrHint)   qrHint.textContent='No se puede contactar el servidor de WhatsApp. Revisa que esté corriendo (pm2 status).';
+                    if(mode==='pair'&& pairHint) pairHint.textContent='No se puede contactar el servidor de WhatsApp. Revisa que esté corriendo (pm2 status).';
+                    return;
+                }
+                badge.textContent='esperando vinculación'; setDot('var(--warn)');
+
+                if(mode==='qr'){
+                    if(d.qr && qrImg){ qrImg.src=d.qr; qrImg.style.display=''; qrHint.textContent='Escanéalo antes de que caduque.'; }
+                    else if(qrHint){
+                        qrImg && (qrImg.style.display='none');
+                        qrHint.innerHTML = d.error
+                            ? ('⚠️ El navegador no arrancó en el servidor:<br><span style="color:var(--bad)">'+d.error.replace(/[<>]/g,'')+'</span>')
+                            : 'Generando el código… (arrancando el navegador en el servidor)';
+                    }
+                } else if(mode==='pair'){
+                    if(d.pair_code){ pairOut.textContent = d.pair_code; pairHint.innerHTML='En ese teléfono: WhatsApp → <strong>Dispositivos vinculados</strong> → <strong>Vincular un dispositivo</strong> → <strong>Vincular con número de teléfono</strong>, y escribe el código.'; }
+                    else if(d.error){ pairOut.textContent=''; pairHint.innerHTML='⚠️ <span style="color:var(--bad)">'+d.error.replace(/[<>]/g,'')+'</span>'; }
+                }
             }catch(e){ badge.textContent='error de red'; setDot('var(--bad)'); }
         }
+
         qrBtn && qrBtn.addEventListener('click', async () => {
-            wantQr = true; qrBox.classList.remove('hidden'); qrHint.textContent='Generando el código…';
-            try{ await fetch('{{ route('dashboard.alerts.wa.qr') }}', {method:'POST',headers:{'X-CSRF-TOKEN':document.querySelector('meta[name=csrf-token]').content}}); }catch(e){}
+            mode='qr';
+            qrBox.classList.remove('hidden'); pairBox && pairBox.classList.add('hidden');
+            qrImg.style.display=''; qrHint.textContent='Generando el código…';
+            try{ await fetch('{{ route('dashboard.alerts.wa.qr') }}', {method:'POST',headers:{'X-CSRF-TOKEN':csrf}}); }catch(e){}
             poll();
         });
+
+        pairBtn && pairBtn.addEventListener('click', () => {
+            pairBox.classList.remove('hidden'); qrBox && qrBox.classList.add('hidden');
+            pairOut.textContent=''; if(pairPh && !pairPh.value){ pairPh.focus(); }
+        });
+
+        pairGo && pairGo.addEventListener('click', async () => {
+            const phone = (pairPh.value||'').replace(/\D/g,'');
+            if(phone.length < 8){ pairHint.innerHTML='<span style="color:var(--bad)">Escribe el número con código de país (ej: 573001234567).</span>'; return; }
+            mode='pair'; pairOut.textContent=''; pairHint.textContent='Generando el código…';
+            try{
+                const r = await fetch('{{ route('dashboard.alerts.wa.pair') }}', {
+                    method:'POST',
+                    headers:{'X-CSRF-TOKEN':csrf,'Content-Type':'application/json',Accept:'application/json'},
+                    body: JSON.stringify({phone})
+                });
+                const j = await r.json();
+                if(!j.ok){ pairHint.innerHTML='<span style="color:var(--bad)">'+(j.error||'No se pudo generar el código.')+'</span>'; return; }
+            }catch(e){ pairHint.innerHTML='<span style="color:var(--bad)">Error de red al pedir el código.</span>'; return; }
+            poll();
+        });
+
         poll();
-        setInterval(poll, 5000);
+        setInterval(poll, 4000);
     })();
 </script>
 @endpush

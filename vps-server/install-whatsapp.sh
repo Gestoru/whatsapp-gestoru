@@ -25,15 +25,24 @@ if [ "$NEED_NODE" = 1 ]; then
 fi
 command -v node >/dev/null 2>&1 && ok "Node $(node -v)" || { echo "No se pudo instalar Node.js"; exit 1; }
 
-# ── 2. Dependencias de Chromium (whatsapp-web.js usa puppeteer) ──────────────
-say "2/5 · Dependencias de Chromium"
+# ── 2. Navegador para whatsapp-web.js (Google Chrome trae sus dependencias) ──
+say "2/5 · Navegador (Google Chrome)"
 apt-get update -qq 2>/dev/null || true
+if command -v google-chrome-stable >/dev/null 2>&1 || command -v chromium-browser >/dev/null 2>&1 || command -v chromium >/dev/null 2>&1; then
+    ok "Ya hay un navegador Chromium/Chrome"
+else
+    warn "Instalando Google Chrome stable…"
+    curl -fsSL -o /tmp/google-chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb 2>/dev/null || true
+    apt-get install -y /tmp/google-chrome.deb >/dev/null 2>&1 \
+      || { apt-get install -f -y >/dev/null 2>&1; apt-get install -y /tmp/google-chrome.deb >/dev/null 2>&1; } || true
+    rm -f /tmp/google-chrome.deb
+fi
+# Librerías por si se usa el Chromium incluido en puppeteer
 apt-get install -y -qq \
   ca-certificates fonts-liberation libatk-bridge2.0-0 libatk1.0-0 libcups2 \
-  libdbus-1-3 libdrm2 libgbm1 libgtk-3-0 libnspr4 libnss3 libx11-xcb1 \
-  libxcomposite1 libxdamage1 libxrandr2 libasound2 libasound2t64 xdg-utils \
-  >/dev/null 2>&1 || true
-ok "Dependencias intentadas"
+  libdbus-1-3 libdrm2 libgbm1 libgtk-3-0 libnspr4 libnss3 libxcomposite1 \
+  libxdamage1 libxrandr2 libasound2 xdg-utils >/dev/null 2>&1 || true
+command -v google-chrome-stable >/dev/null 2>&1 && ok "Google Chrome: $(command -v google-chrome-stable)" || warn "Se usará el Chromium de puppeteer"
 
 # ── 3. npm install ───────────────────────────────────────────────────────────
 say "3/5 · Instalando el servidor (npm)"
@@ -62,7 +71,9 @@ fi
 say "5/5 · Arrancando con PM2"
 command -v pm2 >/dev/null 2>&1 || npm install -g pm2 >/dev/null 2>&1 || true
 if command -v pm2 >/dev/null 2>&1; then
-    pm2 start ecosystem.config.js 2>/dev/null || pm2 start server.js --name wpp-gestoru-vps
+    # Borra cualquier instancia previa para no duplicar ni chocar en el puerto 3000
+    pm2 delete wpp-gestoru-vps >/dev/null 2>&1 || true
+    pm2 start ecosystem.config.js
     pm2 save >/dev/null 2>&1 || true
     ok "Servidor en marcha (pm2 status para verlo)"
 else
