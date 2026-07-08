@@ -71,7 +71,9 @@ fi
 say "5/5 · Arrancando con PM2"
 command -v pm2 >/dev/null 2>&1 || npm install -g pm2 >/dev/null 2>&1 || true
 if command -v pm2 >/dev/null 2>&1; then
-    pm2 start ecosystem.config.js 2>/dev/null || pm2 start server.js --name wpp-gestoru-vps
+    # Borra cualquier instancia previa para no duplicar ni chocar en el puerto 3000
+    pm2 delete wpp-gestoru-vps >/dev/null 2>&1 || true
+    pm2 start ecosystem.config.js
     pm2 save >/dev/null 2>&1 || true
     ok "Servidor en marcha (pm2 status para verlo)"
 else
