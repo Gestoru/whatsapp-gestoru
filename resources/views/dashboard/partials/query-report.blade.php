@@ -86,13 +86,16 @@
 
     @foreach($queries as $q)
         @php([$sevColor, $sevLabel] = $sevMeta[$q['severity']] ?? $sevMeta['media'])
-        @php([$trColor, $trBg] = $trendMeta[$q['trend']['state']] ?? $trendMeta['estable'])
+        @php($trend = $q['trend'] ?? null)
+        @php([$trColor, $trBg] = $trendMeta[$trend['state'] ?? 'estable'] ?? $trendMeta['estable'])
         <div class="card" style="margin-bottom:16px;border-left:3px solid {{ $sevColor }};padding:16px 18px">
             <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
                 <div class="row" style="gap:8px">
                     <span style="font-size:18px;font-weight:800;color:{{ $sevColor }}">#{{ $q['rank'] }}</span>
                     <span class="tag" style="background:{{ $sevColor }}22;color:{{ $sevColor }}">{{ $sevLabel }}</span>
-                    <span class="tag" style="background:{{ $trBg }};color:{{ $trColor }}" title="{{ $q['trend']['since'] ? 'comparado con hace '.$q['trend']['since'] : 'primera vez que se registra' }}">{{ $q['trend']['label'] }}</span>
+                    @if($trend && $trend['label'])
+                        <span class="tag" style="background:{{ $trBg }};color:{{ $trColor }}" title="{{ $trend['since'] ? 'comparado con hace '.$trend['since'] : 'primera vez que se registra' }}">{{ $trend['label'] }}</span>
+                    @endif
                     <span class="pill">🗄️ {{ $q['db'] }}</span>
                     <span class="pill">👤 {{ !empty($q['users']) ? implode(', ', $q['users']) : 'usuario no visto en muestra reciente' }}</span>
                 </div>

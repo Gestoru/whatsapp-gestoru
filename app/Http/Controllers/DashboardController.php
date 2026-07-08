@@ -422,7 +422,14 @@ class DashboardController extends Controller
                 $data['report'] = $report;
                 if ($report['available']) {
                     $queries = $advisor->analyze($report, $server);
-                    [$queries, $data['resolved']] = $this->trackQueries($server, $queries);
+                    // El seguimiento es un extra: si su tabla aún no existe
+                    // (migración sin correr) o falla, mostramos las consultas
+                    // igual, sin tendencia, en vez de romper la página.
+                    try {
+                        [$queries, $data['resolved']] = $this->trackQueries($server, $queries);
+                    } catch (\Throwable $e) {
+                        \Illuminate\Support\Facades\Log::warning('Seguimiento de consultas no disponible', ['error' => $e->getMessage()]);
+                    }
                     $data['queries'] = $queries;
                 }
             } catch (\Throwable $e) {
