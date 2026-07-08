@@ -79,6 +79,12 @@ class VpsWhatsAppService
         return $this->post('request-qr');
     }
 
+    /** Pide un código de vinculación (modo "vincular con número", sin QR). */
+    public function requestPair(string $phone): array
+    {
+        return $this->post('request-pair', ['phone' => $phone]);
+    }
+
     public function disconnect(): array
     {
         return $this->post('disconnect');

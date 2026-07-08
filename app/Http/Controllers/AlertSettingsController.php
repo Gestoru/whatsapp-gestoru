@@ -80,6 +80,7 @@ class AlertSettingsController extends Controller
             'initializing' => false,
             'session'      => null,
             'qr'           => null,
+            'pair_code'    => null,
             'error'        => null,
         ];
 
@@ -90,6 +91,7 @@ class AlertSettingsController extends Controller
             $out['initializing'] = (bool) ($s['initializing'] ?? false);
             $out['session']      = $s['session'] ?? \Illuminate\Support\Facades\Cache::get('wa_session');
             $out['error']        = $s['error'] ?? null;
+            $out['pair_code']    = $s['pair_code'] ?? null;
             if ($out['connected']) {
                 \Illuminate\Support\Facades\Cache::forget('wa_qr');
             } else {
@@ -106,6 +108,25 @@ class AlertSettingsController extends Controller
     {
         try {
             app(\App\Services\VpsWhatsAppService::class)->requestQr();
+
+            return response()->json(['ok' => true]);
+        } catch (\Throwable $e) {
+            return response()->json(['ok' => false, 'error' => 'No se pudo contactar el servidor de WhatsApp: '.$e->getMessage()]);
+        }
+    }
+
+    /** Pide un código de vinculación (sin QR) para el número indicado. */
+    public function waPair(Request $request)
+    {
+        $data = $request->validate(['phone' => 'required|string|max:30']);
+        $phone = preg_replace('/\D/', '', $data['phone']);
+
+        if (strlen((string) $phone) < 8) {
+            return response()->json(['ok' => false, 'error' => 'Número inválido. Escríbelo con código de país (ej: 57 300…).']);
+        }
+
+        try {
+            app(\App\Services\VpsWhatsAppService::class)->requestPair($phone);
 
             return response()->json(['ok' => true]);
         } catch (\Throwable $e) {

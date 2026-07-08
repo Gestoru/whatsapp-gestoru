@@ -14,6 +14,10 @@ let isReady     = false;
 let isInitializing = false;
 let currentQr   = null;   // último QR (data URL) para exponerlo por /status
 let lastError   = null;   // último error de arranque (p. ej. Chromium no lanza)
+let wantPair    = false;  // el usuario pidió vincular por código en vez de QR
+let pairPhone   = null;   // número (con código país, solo dígitos) a vincular
+let pairCode    = null;   // código de vinculación de 8 caracteres
+let pairAsked   = false;  // ya se pidió el código en esta sesión
 
 // ── Webhook hacia Laravel ─────────────────────────────────────────────────────
 async function sendWebhook(type, data = {}) {
@@ -81,10 +85,25 @@ function buildClient() {
 function attachEvents(client) {
     // QR generado — enviar al Laravel para mostrarlo en el frontend
     client.on('qr', async (qr) => {
+        lastError = null;                            // arrancó bien: llegó al login
+
+        // Si el usuario pidió vincular por código, pedimos el código de 8
+        // caracteres en lugar de mostrar el QR (más confiable en servidores).
+        if (wantPair && pairPhone && !pairAsked) {
+            pairAsked = true;
+            try {
+                pairCode = await client.requestPairingCode(pairPhone);
+                console.log('[whatsapp] Código de vinculación:', pairCode);
+            } catch (err) {
+                lastError = 'No se pudo generar el código de vinculación: ' + (err.message || err);
+                console.error('[whatsapp]', lastError);
+            }
+            return; // en modo código no exponemos el QR
+        }
+
         console.log('[whatsapp] QR generado');
         const qrDataUrl = await qrcode.toDataURL(qr);
         currentQr = qrDataUrl;                       // disponible por GET /status
-        lastError = null;                            // arrancó bien: ya hay QR
         await sendWebhook('qr_update', { qr_data_url: qrDataUrl });
     });
 
@@ -97,6 +116,7 @@ function attachEvents(client) {
     client.on('ready', async () => {
         isReady        = true;
         currentQr      = null;
+        pairCode       = null;
         lastError      = null;
         isInitializing = false;
         console.log('[whatsapp] Conectado y listo');
@@ -197,9 +217,10 @@ async function initWhatsApp() {
 
 // ── Endpoints REST ────────────────────────────────────────────────────────────
 
-// Solicitar QR (Base44 → Laravel → aquí)
+// Solicitar QR (modo imagen)
 app.post('/request-qr', async (req, res) => {
     console.log('[api] POST /request-qr');
+    wantPair = false; pairPhone = null; pairCode = null; pairAsked = false; currentQr = null;
     initWhatsApp().catch(err => {
         console.error('[whatsapp] Init error:', err.message);
         console.error(err.stack || err);
@@ -207,11 +228,30 @@ app.post('/request-qr', async (req, res) => {
     res.json({ message: 'QR generation started' });
 });
 
+// Solicitar código de vinculación (modo "vincular con número", sin QR)
+app.post('/request-pair', async (req, res) => {
+    const raw = (req.body && req.body.phone) ? String(req.body.phone) : '';
+    const phone = raw.replace(/\D/g, '');   // solo dígitos, con código de país
+    console.log('[api] POST /request-pair', phone ? '('+phone+')' : '(sin número)');
+
+    if (phone.length < 8) {
+        return res.status(422).json({ error: 'Número inválido. Usa el número con código de país, solo dígitos.' });
+    }
+
+    wantPair = true; pairPhone = phone; pairCode = null; pairAsked = false; currentQr = null;
+    initWhatsApp().catch(err => {
+        console.error('[whatsapp] Init error:', err.message);
+        console.error(err.stack || err);
+    });
+    res.json({ message: 'Pairing code requested' });
+});
+
 // Desconectar sesión
 app.post('/disconnect', async (req, res) => {
     console.log('[api] POST /disconnect');
     isReady        = false;
     isInitializing = false;
+    currentQr = null; pairCode = null; wantPair = false; pairPhone = null; pairAsked = false;
 
     if (wpClient) {
         try { await wpClient.destroy(); } catch (_) {}
@@ -260,6 +300,7 @@ app.get('/status', (_req, res) => {
         initializing: isInitializing,
         session:      wpClient?.info?.wid?.user ?? null,
         qr:           isReady ? null : currentQr,   // QR directo, sin depender del webhook
+        pair_code:    isReady ? null : pairCode,    // código de vinculación (modo sin QR)
         error:        isReady ? null : lastError,   // por qué no arranca (p. ej. Chromium)
     });
 });

@@ -69,6 +69,7 @@ Route::middleware('dashboard.auth')->prefix('panel')->name('dashboard.')->group(
     Route::post('/alertas/whatsapp', [AlertSettingsController::class, 'saveWhatsApp'])->name('alerts.wa.save');
     Route::get('/alertas/whatsapp/estado', [AlertSettingsController::class, 'waStatus'])->name('alerts.wa.status');
     Route::post('/alertas/whatsapp/qr', [AlertSettingsController::class, 'waRequestQr'])->name('alerts.wa.qr');
+    Route::post('/alertas/whatsapp/codigo', [AlertSettingsController::class, 'waPair'])->name('alerts.wa.pair');
     Route::post('/alertas/whatsapp/desconectar', [AlertSettingsController::class, 'waDisconnect'])->name('alerts.wa.disconnect');
 
     // Administración de dominios (registradores y vencimientos)
