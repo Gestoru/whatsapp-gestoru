@@ -22,7 +22,7 @@
             $x = $padL + ($n <= 1 ? $iW/2 : $iW * $i/($n-1));
             $y = $padT + $iH * (1 - $v/100);
             $pts[] = round($x,1).','.round($y,1);
-            $points[] = [round($x,1), round($y,1), $s->sampled_at->format('d/m H:i').' · '.($raw === null ? 's/d' : $raw.$unit)];
+            $points[] = [round($x,1), round($y,1), $s->sampled_at->format('d/m H:i').' · '.($raw === null ? 's/d' : $raw.$unit), $i];
             if ($v >= $peakAt) $dots[] = [round($x,1), round($y,1), $v];
             $i++;
         }
@@ -35,6 +35,19 @@
         ['mem','RAM','#22e39b','🧠', fn($s)=>$s->memPct()],
         ['disk','Disco','#38bdf8','💾', fn($s)=>$s->diskPct()],
     ];
+    // Detalle completo de cada muestra (para el panel al hacer clic en un punto)
+    $sampleJs = $samples->map(fn ($s) => [
+        't'       => $s->sampled_at->format('d/m/Y H:i'),
+        'cpu'     => $s->cpu_pct,
+        'mem'     => $s->memPct(),
+        'disk'    => $s->diskPct(),
+        'load'    => $s->load1,
+        'proc'    => $s->top_cpu_cmd,
+        'procPct' => $s->top_cpu_pct,
+        'cont'    => $s->top_container,
+        'contPct' => $s->top_container_pct,
+        'crit'    => $s->cpu_pct !== null && $s->cpu_pct >= $threshold,
+    ])->values();
 @endphp
 
 @push('scripts')
@@ -148,7 +161,8 @@
         @foreach($charts as [$key,$label,$color,$ic,$accessor])
             @php($p = $build($accessor))
             <h2><span class="section-ic" style="background:{{ $color }}22;border-color:{{ $color }}66;color:{{ $color }}">{{ $ic }}</span>
-                {{ $label }} <span class="muted tiny" style="font-weight:400">· en el rango</span></h2>
+                {{ $label }} <span class="muted tiny" style="font-weight:400">· en el rango</span>
+                <span class="muted tiny" style="font-weight:400;margin-left:auto">👆 clic en un punto para ver el detalle</span></h2>
             <div class="card" style="padding:12px;background:linear-gradient(180deg,#111a34,#0b1226)">
                 <svg class="trend-chart" viewBox="0 0 {{ $W }} {{ $H }}" preserveAspectRatio="none" style="width:100%;height:170px;display:block">
                     <defs>
@@ -167,9 +181,9 @@
                     @foreach($p['dots'] as [$dx,$dy,$dv])
                         <circle cx="{{ $dx }}" cy="{{ $dy }}" r="3.5" fill="#fff" stroke="{{ $color }}" stroke-width="2"/>
                     @endforeach
-                    {{-- Puntos invisibles con tooltip al pasar el mouse --}}
-                    @foreach($p['points'] as [$dx,$dy,$tip])
-                        <circle cx="{{ $dx }}" cy="{{ $dy }}" r="8" fill="transparent" style="cursor:pointer">
+                    {{-- Puntos invisibles: tooltip al pasar el mouse, detalle al hacer clic --}}
+                    @foreach($p['points'] as [$dx,$dy,$tip,$si])
+                        <circle cx="{{ $dx }}" cy="{{ $dy }}" r="8" fill="transparent" data-i="{{ $si }}" style="cursor:pointer">
                             <title>{{ $tip }}</title>
                         </circle>
                     @endforeach
@@ -274,6 +288,14 @@
         <div class="list-card" style="padding:22px;text-align:center">
             <span class="spin"></span>
             <div class="muted tiny" style="margin-top:10px">Analizando el servidor por SSH (procesos, tráfico por dominio, MySQL)… unos segundos.</div>
+        </div>
+    </div>
+
+    {{-- Modal de detalle de un punto de la gráfica --}}
+    <div id="point-modal" style="display:none;position:fixed;inset:0;z-index:200;background:#00000099;backdrop-filter:blur(3px);align-items:center;justify-content:center;padding:20px">
+        <div style="background:linear-gradient(180deg,#151d36,#0f1730);border:1px solid #2b3a66;border-radius:16px;max-width:560px;width:100%;box-shadow:0 20px 60px #000b;position:relative">
+            <button id="point-modal-close" class="btn btn-ghost btn-sm" style="position:absolute;top:10px;right:10px;z-index:1">✕</button>
+            <div id="point-modal-body" style="padding:20px"></div>
         </div>
     </div>
 @endsection
@@ -440,12 +462,25 @@ document.querySelectorAll('svg.trend-chart').forEach(svg => {
     const pts = [...svg.querySelectorAll('circle[fill="transparent"]')].map(c => ({
         x: +c.getAttribute('cx'),
         y: +c.getAttribute('cy'),
+        i: c.dataset.i != null ? +c.dataset.i : null,
         txt: (c.querySelector('title') || {}).textContent || ''
     }));
     if(!pts.length) return;
 
     const color = svg.querySelector('polyline')?.getAttribute('stroke') || '#7dd3fc';
     const vb = svg.viewBox.baseVal;
+    const nearest = clientX => {
+        const r = svg.getBoundingClientRect();
+        const x = (clientX - r.left) / r.width * vb.width;
+        let best = pts[0];
+        for(const p of pts) if(Math.abs(p.x - x) < Math.abs(best.x - x)) best = p;
+        return best;
+    };
+    svg.style.cursor = 'pointer';
+    svg.addEventListener('click', ev => {
+        const best = nearest(ev.clientX);
+        if(best && best.i != null && window.SAMPLES && SAMPLES[best.i]) openDetail(SAMPLES[best.i]);
+    });
 
     const guide = document.createElementNS(SVGNS, 'line');
     guide.setAttribute('stroke', color); guide.setAttribute('stroke-width', '1');
@@ -478,6 +513,68 @@ document.querySelectorAll('svg.trend-chart').forEach(svg => {
         guide.style.display = 'none'; dot.style.display = 'none'; chartTip.style.display = 'none';
     });
 });
+
+// ═══ DETALLE AL HACER CLIC EN UN PUNTO ═══
+window.SAMPLES = @json($sampleJs);
+const modal = document.getElementById('point-modal');
+const modalBody = document.getElementById('point-modal-body');
+function escP(s){ return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function openDetail(s){
+    const critColor = s.crit ? '#ff4d6d' : (s.cpu >= 70 ? '#fbbf24' : '#22e39b');
+    const badge = s.crit
+        ? '<span class="tag" style="background:#ff4d6d22;color:#ff4d6d">🔴 PICO CRÍTICO</span>'
+        : (s.cpu >= 70 ? '<span class="tag" style="background:#fbbf2422;color:#fbbf24">🟡 CPU alta</span>'
+                       : '<span class="tag" style="background:#22e39b22;color:#22e39b">🟢 Normal</span>');
+    const gauge = (label, val, unit, col) =>
+        '<div class="stat" style="padding:10px 12px"><div class="k">' + label + '</div>'
+        + '<div class="v" style="font-size:20px;color:' + col + '">' + (val==null?'—':val + unit) + '</div></div>';
+
+    let html = '<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">'
+        + '<div class="row" style="gap:10px"><span style="font-size:17px;font-weight:800">🕓 ' + escP(s.t) + '</span>' + badge + '</div>'
+        + '<span class="muted tiny">hora Colombia</span></div>';
+
+    html += '<div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px">'
+        + gauge('CPU', s.cpu, '%', critColor)
+        + gauge('RAM', s.mem, '%', '#22e39b')
+        + gauge('Disco', s.disk, '%', '#38bdf8')
+        + gauge('Carga 1m', s.load, '', '#7dd3fc')
+        + '</div>';
+
+    html += '<div style="margin-top:14px"><div class="tiny" style="font-weight:700;color:var(--muted);margin-bottom:6px">🔥 QUÉ CONSUMÍA EN ESE MOMENTO</div>';
+    if(s.proc){
+        html += '<div class="tiny" style="font-family:ui-monospace,monospace;color:#fca5a5;word-break:break-all">'
+            + escP(s.proc) + (s.procPct ? ' <b>(' + s.procPct + '%)</b>' : '') + '</div>';
+    } else {
+        html += '<div class="tiny muted">No se registró el proceso en esta muestra (muestra tomada antes de esta mejora).</div>';
+    }
+    if(s.cont){
+        html += '<div class="tiny" style="margin-top:6px;color:#7dd3fc;font-family:ui-monospace,monospace">🐳 ' + escP(s.cont)
+            + (s.contPct ? ' (' + s.contPct + '% de un núcleo)' : '')
+            + '</div><div class="tiny muted" style="margin-top:4px">Si es la base de datos, revisa el <a href="{{ route('dashboard.servers.queries', $server) }}" style="color:var(--accent)">optimizador de consultas</a> para ver qué consultas pesaban.</div>';
+    }
+    html += '</div>';
+
+    const prompt = 'Actúa como ingeniero SRE (Linux/Docker/MySQL). En un servidor de producción ({{ $server->name }} · {{ $server->host }}) hubo esta lectura de recursos y quiero saber la causa y cómo evitarla.\n\n'
+        + '## Momento (hora Colombia): ' + s.t + '\n'
+        + '- CPU: ' + (s.cpu ?? '?') + '% · RAM: ' + (s.mem ?? '?') + '% · Disco: ' + (s.disk ?? '?') + '% · carga 1m: ' + (s.load ?? '?') + '\n'
+        + '- Proceso que más consumía: ' + (s.proc || '—') + (s.procPct ? ' (' + s.procPct + '%)' : '') + '\n'
+        + (s.cont ? '- Contenedor Docker responsable: ' + s.cont + (s.contPct ? ' (' + s.contPct + '% de un núcleo)' : '') + '\n' : '')
+        + '\n## Qué necesito\n1. Causa más probable.\n2. Comandos exactos para confirmarla.\n3. Cómo evitar que se repita.\nSi el contenedor es de base de datos, dime qué consultas revisar.';
+
+    html += '<div class="row" style="justify-content:flex-end;margin-top:16px;gap:6px">'
+        + '<button type="button" class="btn btn-primary btn-sm" data-copy="point-ai">🤖 Copiar informe de este momento para IA</button></div>'
+        + '<textarea id="point-ai" readonly style="display:none">' + escP(prompt) + '</textarea>';
+
+    modalBody.innerHTML = html;
+    modalBody.style.borderTop = '3px solid ' + critColor;
+    modal.style.display = 'flex';
+}
+if(modal){
+    modal.addEventListener('click', e => { if(e.target === modal) modal.style.display = 'none'; });
+    document.getElementById('point-modal-close').addEventListener('click', () => modal.style.display = 'none');
+    document.addEventListener('keydown', e => { if(e.key === 'Escape') modal.style.display = 'none'; });
+}
 
 // Inserta el pico recién capturado en el reporte, sin recargar la página
 function prependLiveEvent(cpu, m, peak){
