@@ -56,11 +56,13 @@ function chromiumPath() {
 }
 
 function buildClient() {
+    const cp = chromiumPath();
+    console.log('[whatsapp] Chromium:', cp || '(el incluido en puppeteer)');
     return new Client({
         authStrategy: new LocalAuth({ clientId: 'wpp-gestoru' }),
         puppeteer: {
             headless: true,
-            executablePath: chromiumPath(),
+            executablePath: cp,
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
@@ -185,7 +187,10 @@ async function initWhatsApp() {
 // Solicitar QR (Base44 → Laravel → aquí)
 app.post('/request-qr', async (req, res) => {
     console.log('[api] POST /request-qr');
-    initWhatsApp().catch(err => console.error('[whatsapp] Init error:', err.message));
+    initWhatsApp().catch(err => {
+        console.error('[whatsapp] Init error:', err.message);
+        console.error(err.stack || err);
+    });
     res.json({ message: 'QR generation started' });
 });
 
