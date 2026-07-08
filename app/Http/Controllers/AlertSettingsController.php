@@ -73,13 +73,23 @@ class AlertSettingsController extends Controller
     public function waStatus()
     {
         $configured = (bool) \App\Services\VpsWhatsAppService::apiUrl();
-        $out = ['configured' => $configured, 'connected' => false, 'session' => null, 'qr' => null, 'error' => null];
+        $out = [
+            'configured'   => $configured,
+            'reachable'    => false,
+            'connected'    => false,
+            'initializing' => false,
+            'session'      => null,
+            'qr'           => null,
+            'error'        => null,
+        ];
 
         if ($configured) {
             $s = app(\App\Services\VpsWhatsAppService::class)->status();
-            $out['connected'] = (bool) ($s['connected'] ?? false);
-            $out['session']   = $s['session'] ?? \Illuminate\Support\Facades\Cache::get('wa_session');
-            $out['error']     = $s['error'] ?? null;
+            $out['reachable']    = (bool) ($s['reachable'] ?? false);
+            $out['connected']    = (bool) ($s['connected'] ?? false);
+            $out['initializing'] = (bool) ($s['initializing'] ?? false);
+            $out['session']      = $s['session'] ?? \Illuminate\Support\Facades\Cache::get('wa_session');
+            $out['error']        = $s['error'] ?? null;
             if ($out['connected']) {
                 \Illuminate\Support\Facades\Cache::forget('wa_qr');
             } else {

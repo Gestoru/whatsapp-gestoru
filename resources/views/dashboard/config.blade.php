@@ -321,14 +321,24 @@
                 const r = await fetch('{{ route('dashboard.alerts.wa.status') }}', {headers:{Accept:'application/json'}});
                 const d = await r.json();
                 if(!d.configured){ badge.textContent='sin servidor'; setDot('var(--muted)'); return; }
-                if(d.error && !d.connected){ badge.textContent='servidor no responde'; setDot('var(--bad)'); }
-                else if(d.connected){
+                if(d.connected){
                     badge.textContent = 'Conectado' + (d.session ? ' · '+d.session : ''); setDot('var(--ok)');
                     if(qrBox){ qrBox.classList.add('hidden'); } wantQr=false;
+                } else if(!d.reachable){
+                    badge.textContent='servidor no responde'; setDot('var(--bad)');
+                    if(wantQr && qrHint){ qrHint.textContent='No se puede contactar el servidor de WhatsApp. Revisa que esté corriendo (pm2 status).'; }
                 } else {
                     badge.textContent='esperando vinculación'; setDot('var(--warn)');
                 }
-                if(wantQr && d.qr && qrImg){ qrImg.src = d.qr; qrHint.textContent='Escanéalo antes de que caduque.'; }
+                if(wantQr && d.qr && qrImg){
+                    qrImg.src = d.qr; qrImg.style.display=''; qrHint.textContent='Escanéalo antes de que caduque.';
+                } else if(wantQr && d.reachable && !d.connected && !d.qr && qrHint){
+                    // Servidor vivo pero sin QR: casi siempre el navegador no arrancó.
+                    qrImg && (qrImg.style.display='none');
+                    qrHint.innerHTML = d.error
+                        ? ('⚠️ El navegador no arrancó en el servidor:<br><span style="color:var(--bad)">'+d.error.replace(/[<>]/g,'')+'</span>')
+                        : 'Generando el código… (arrancando el navegador en el servidor)';
+                }
             }catch(e){ badge.textContent='error de red'; setDot('var(--bad)'); }
         }
         qrBtn && qrBtn.addEventListener('click', async () => {

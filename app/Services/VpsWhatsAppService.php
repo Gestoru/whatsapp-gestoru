@@ -67,9 +67,10 @@ class VpsWhatsAppService
         try {
             $r = $this->client->get('status');
 
-            return json_decode($r->getBody()->getContents(), true) ?? [];
+            return (json_decode($r->getBody()->getContents(), true) ?? []) + ['reachable' => true];
         } catch (\Throwable $e) {
-            return ['connected' => false, 'error' => $e->getMessage()];
+            // El servidor de WhatsApp no respondió (apagado, puerto, red).
+            return ['connected' => false, 'reachable' => false, 'error' => $e->getMessage()];
         }
     }
 

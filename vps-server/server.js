@@ -13,6 +13,7 @@ let wpClient    = null;
 let isReady     = false;
 let isInitializing = false;
 let currentQr   = null;   // último QR (data URL) para exponerlo por /status
+let lastError   = null;   // último error de arranque (p. ej. Chromium no lanza)
 
 // ── Webhook hacia Laravel ─────────────────────────────────────────────────────
 async function sendWebhook(type, data = {}) {
@@ -83,6 +84,7 @@ function attachEvents(client) {
         console.log('[whatsapp] QR generado');
         const qrDataUrl = await qrcode.toDataURL(qr);
         currentQr = qrDataUrl;                       // disponible por GET /status
+        lastError = null;                            // arrancó bien: ya hay QR
         await sendWebhook('qr_update', { qr_data_url: qrDataUrl });
     });
 
@@ -95,6 +97,7 @@ function attachEvents(client) {
     client.on('ready', async () => {
         isReady        = true;
         currentQr      = null;
+        lastError      = null;
         isInitializing = false;
         console.log('[whatsapp] Conectado y listo');
         const session = client.info?.wid?.user ?? null;
@@ -177,9 +180,19 @@ async function initWhatsApp() {
     }
 
     isInitializing = true;
+    lastError = null;
     wpClient = buildClient();
     attachEvents(wpClient);
-    await wpClient.initialize();
+    try {
+        await wpClient.initialize();
+    } catch (err) {
+        // Típico: el navegador (Chromium/Chrome) no pudo lanzarse.
+        isInitializing = false;
+        lastError = err.message || String(err);
+        console.error('[whatsapp] initialize() falló:', lastError);
+        console.error(err.stack || err);
+        throw err;
+    }
 }
 
 // ── Endpoints REST ────────────────────────────────────────────────────────────
@@ -247,6 +260,7 @@ app.get('/status', (_req, res) => {
         initializing: isInitializing,
         session:      wpClient?.info?.wid?.user ?? null,
         qr:           isReady ? null : currentQr,   // QR directo, sin depender del webhook
+        error:        isReady ? null : lastError,   // por qué no arranca (p. ej. Chromium)
     });
 });
 
