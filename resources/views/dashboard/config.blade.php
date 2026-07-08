@@ -158,11 +158,13 @@
                         📩 También te avisa si un servidor <strong style="color:var(--text)">deja de responder</strong>. Se revisa cada 5 minutos.
                     </div>
                     <div class="row" style="justify-content:flex-end;gap:8px">
-                        <button formaction="{{ route('dashboard.alerts.test') }}" formmethod="POST" class="btn" @disabled(!$waConfigured)>📤 Enviar prueba</button>
+                        {{-- «Enviar prueba» va en su propio formulario (POST), aparte del PUT de guardar --}}
+                        <button form="wa-test-form" class="btn" @disabled(!$waConfigured)>📤 Enviar prueba</button>
                         <button class="btn btn-primary">Guardar alertas</button>
                     </div>
                 </div>
             </form>
+            <form id="wa-test-form" method="POST" action="{{ route('dashboard.alerts.test') }}">@csrf</form>
         </section>
 
         {{-- ══ GODADDY ══ --}}
