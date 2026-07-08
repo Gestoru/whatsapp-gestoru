@@ -64,14 +64,14 @@ function buildClient() {
         puppeteer: {
             headless: true,
             executablePath: cp,
+            // OJO: NO usar --single-process ni --no-zygote: provocan el error
+            // "Attempted to use detached Frame" al inicializar en servidores.
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
                 '--disable-accelerated-2d-canvas',
                 '--no-first-run',
-                '--no-zygote',
-                '--single-process',
                 '--disable-gpu',
             ],
         },
