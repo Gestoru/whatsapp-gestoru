@@ -38,6 +38,11 @@ class WebhookController extends Controller
     {
         $qrDataUrl = $payload['qr_data_url'] ?? null;
 
+        // Guardamos el QR para mostrarlo en el panel de Alertas (caduca solo).
+        if ($qrDataUrl) {
+            \Illuminate\Support\Facades\Cache::put('wa_qr', $qrDataUrl, now()->addMinutes(3));
+        }
+
         $this->base44Webhook->notify('qr_update', [
             'qr' => $qrDataUrl,
         ]);
@@ -48,6 +53,13 @@ class WebhookController extends Controller
     private function handleStatusChange(array $payload): JsonResponse
     {
         $status = $payload['status'] ?? 'disconnected';
+
+        // Reflejamos el estado en el panel; al conectar, ya no hace falta el QR.
+        \Illuminate\Support\Facades\Cache::put('wa_status', $status, now()->addDay());
+        if ($status === 'connected') {
+            \Illuminate\Support\Facades\Cache::put('wa_session', $payload['session'] ?? $payload['phone'] ?? null, now()->addDay());
+            \Illuminate\Support\Facades\Cache::forget('wa_qr');
+        }
 
         $this->base44Webhook->notify('status_update', [
             'status'  => $status,

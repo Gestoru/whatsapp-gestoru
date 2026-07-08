@@ -81,12 +81,51 @@
                 <div><h1>Alertas por WhatsApp</h1><p class="muted">Avisos automáticos cuando un servidor tenga problemas.</p></div>
             </div>
 
-            @unless($waConfigured)
-                <div class="alert" style="background:#2e2410;border-color:#6b5316;color:#fcd34d;margin-top:16px">
-                    ⚠️ Falta conectar el servidor de WhatsApp (<code>VPS_API_URL</code>). Puedes configurar las alertas igual,
-                    pero no se enviarán hasta que el WhatsApp esté conectado.
+            {{-- Servidor de WhatsApp: conexión + estado + QR --}}
+            <div class="card" style="margin-top:16px">
+                <div class="row" style="justify-content:space-between;align-items:center">
+                    <h2 style="margin:0;font-size:15px">📲 Servidor de WhatsApp</h2>
+                    <span id="wa-badge" class="pill"><span class="dot" id="wa-dot"></span> <span id="wa-badge-txt">comprobando…</span></span>
                 </div>
-            @endunless
+                <p class="muted tiny" style="margin:8px 0 12px">
+                    Para enviar los avisos, el panel usa un servidor de WhatsApp (incluido en <code>vps-server/</code>).
+                    Indica su dirección y vincula tu WhatsApp escaneando el QR.
+                </p>
+
+                <form method="POST" action="{{ route('dashboard.alerts.wa.save') }}">
+                    @csrf
+                    <div class="form-grid">
+                        <div class="field"><label>Dirección del servidor (URL)</label>
+                            <input name="wa_api_url" value="{{ $waApiUrl }}" placeholder="http://127.0.0.1:3000"></div>
+                        <div class="field"><label>Clave (opcional) @if($waConfigured)<span class="muted">(vacío = no cambiar)</span>@endif</label>
+                            <input name="wa_api_key" type="password" autocomplete="new-password" placeholder="••••••••"></div>
+                    </div>
+                    <div class="row" style="justify-content:flex-end"><button class="btn btn-primary btn-sm">Guardar servidor</button></div>
+                </form>
+
+                @if($waConfigured)
+                    <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px">
+                        <div class="row" style="gap:10px">
+                            <button id="wa-qr-btn" class="btn btn-sm" type="button">📱 Vincular WhatsApp (mostrar QR)</button>
+                            <form method="POST" action="{{ route('dashboard.alerts.wa.disconnect') }}" style="display:inline"
+                                  onsubmit="return confirm('¿Desconectar la sesión de WhatsApp?')">
+                                @csrf
+                                <button class="btn btn-sm btn-danger">Desconectar</button>
+                            </form>
+                        </div>
+                        <div id="wa-qr-box" class="hidden" style="margin-top:14px;text-align:center">
+                            <p class="muted tiny">En tu teléfono: WhatsApp → <strong>Dispositivos vinculados</strong> → <strong>Vincular un dispositivo</strong>, y escanea:</p>
+                            <img id="wa-qr-img" alt="QR de WhatsApp" style="width:240px;height:240px;background:#fff;border-radius:12px;padding:8px;object-fit:contain">
+                            <p class="muted tiny" id="wa-qr-hint">Generando el código…</p>
+                        </div>
+                    </div>
+                @else
+                    <div class="alert" style="background:#101a33;border-color:var(--line);color:var(--muted);margin-top:12px">
+                        Guarda la dirección del servidor (y déjalo corriendo) para poder vincular WhatsApp y enviar avisos.
+                        Si corre en el mismo servidor del panel, suele ser <code>http://127.0.0.1:3000</code>.
+                    </div>
+                @endif
+            </div>
 
             <form method="POST" action="{{ route('dashboard.alerts.update') }}" style="margin-top:16px">
                 @csrf @method('PUT')
@@ -258,6 +297,42 @@
         tabs.forEach(t => t.addEventListener('click', () => show(t.dataset.tab)));
         const h = location.hash.replace('#','');
         if(h && document.getElementById('p-'+h)) show(h);
+    })();
+
+    // ── Estado / QR del servidor de WhatsApp ──
+    (function(){
+        const badge = document.getElementById('wa-badge-txt');
+        const dot   = document.getElementById('wa-dot');
+        if(!badge) return;
+        const qrBtn = document.getElementById('wa-qr-btn');
+        const qrBox = document.getElementById('wa-qr-box');
+        const qrImg = document.getElementById('wa-qr-img');
+        const qrHint= document.getElementById('wa-qr-hint');
+        let wantQr = false;
+        const setDot = c => { dot.style.background = c; dot.style.boxShadow = '0 0 8px '+c; };
+
+        async function poll(){
+            try{
+                const r = await fetch('{{ route('dashboard.alerts.wa.status') }}', {headers:{Accept:'application/json'}});
+                const d = await r.json();
+                if(!d.configured){ badge.textContent='sin servidor'; setDot('var(--muted)'); return; }
+                if(d.error && !d.connected){ badge.textContent='servidor no responde'; setDot('var(--bad)'); }
+                else if(d.connected){
+                    badge.textContent = 'Conectado' + (d.session ? ' · '+d.session : ''); setDot('var(--ok)');
+                    if(qrBox){ qrBox.classList.add('hidden'); } wantQr=false;
+                } else {
+                    badge.textContent='esperando vinculación'; setDot('var(--warn)');
+                }
+                if(wantQr && d.qr && qrImg){ qrImg.src = d.qr; qrHint.textContent='Escanéalo antes de que caduque.'; }
+            }catch(e){ badge.textContent='error de red'; setDot('var(--bad)'); }
+        }
+        qrBtn && qrBtn.addEventListener('click', async () => {
+            wantQr = true; qrBox.classList.remove('hidden'); qrHint.textContent='Generando el código…';
+            try{ await fetch('{{ route('dashboard.alerts.wa.qr') }}', {method:'POST',headers:{'X-CSRF-TOKEN':document.querySelector('meta[name=csrf-token]').content}}); }catch(e){}
+            poll();
+        });
+        poll();
+        setInterval(poll, 5000);
     })();
 </script>
 @endpush

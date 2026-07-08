@@ -16,11 +16,21 @@ class ConfigController extends Controller
      */
     public function index(AlertService $alerts, GoDaddyService $godaddy, ContaboService $contabo, \App\Services\GitHubService $github)
     {
+        // Tolerante a que aún falte la migración de repositorios en el servidor.
+        $githubRepoCount = 0;
+        $githubLastSync  = null;
+        try {
+            $githubRepoCount = \App\Models\Repository::count();
+            $githubLastSync  = \App\Models\Repository::max('synced_at');
+        } catch (\Throwable $e) {
+            // tabla aún no creada; se mostrará 0
+        }
+
         return view('dashboard.config', [
             // GitHub
             'githubConfigured' => $github->configured(),
-            'githubLastSync'   => \App\Models\Repository::max('synced_at'),
-            'githubRepoCount'  => \App\Models\Repository::count(),
+            'githubLastSync'   => $githubLastSync,
+            'githubRepoCount'  => $githubRepoCount,
             // Alertas por WhatsApp
             'enabled'      => Setting::boolean('alerts_enabled'),
             'phone'        => Setting::get('alerts_phone'),
@@ -29,6 +39,7 @@ class ConfigController extends Controller
             'mem'          => Setting::get('alert_mem', 90),
             'cooldown'     => Setting::get('alert_cooldown', 30),
             'waConfigured' => $alerts->whatsappConfigured(),
+            'waApiUrl'     => \App\Services\VpsWhatsAppService::apiUrl(),
 
             // GoDaddy
             'godaddyConfigured' => $godaddy->configured(),

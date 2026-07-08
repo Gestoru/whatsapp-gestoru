@@ -30,7 +30,7 @@ class AlertService
 
     public function whatsappConfigured(): bool
     {
-        return (bool) config('services.vps.api_url');
+        return (bool) VpsWhatsAppService::apiUrl();
     }
 
     /** Evalúa una muestra recién tomada y dispara alertas si aplica. */
