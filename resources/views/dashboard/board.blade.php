@@ -15,20 +15,73 @@
     .kcol-head{padding:11px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;
         font-weight:700;font-size:14px;position:sticky;top:0;background:#0e1630;border-radius:14px 14px 0 0;z-index:1}
     .kcol-body{padding:10px;display:flex;flex-direction:column;gap:10px;min-height:60px}
-    .kcard{background:linear-gradient(180deg,var(--card),var(--bg2));border:1px solid var(--line);border-left-width:3px;
-        border-radius:12px;padding:12px 13px}
+    .kboard-legend{display:flex;gap:14px;flex-wrap:wrap;margin:6px 0 12px;font-size:12px}
+    .kboard-legend span{font-weight:600}
+    .kboard-legend b{font-variant-numeric:tabular-nums}
+    /* Tarjeta compacta: solo el titular */
+    .kcard{background:linear-gradient(180deg,var(--card),var(--bg2));border:1px solid var(--line);
+        border-left:3px solid var(--sev);border-radius:11px;padding:11px 12px;display:flex;flex-direction:column;gap:8px}
     .kcard.drag{opacity:.5}
     .kcol.over{outline:2px dashed var(--accent);outline-offset:-4px}
-    .kcard h4{margin:0 0 6px;font-size:14px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
-    .kcard .cause{font-size:12px;color:var(--muted);line-height:1.6;margin:8px 0}
-    .kcard .kmetrics{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0}
-    .kchip{font-size:11px;background:#0e1836;border:1px solid var(--line);border-radius:7px;padding:3px 7px;font-family:ui-monospace,monospace}
-    .kacts{display:flex;flex-wrap:wrap;gap:5px;margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}
-    .kacts button,.kacts a{font-size:11.5px;padding:5px 9px;border-radius:7px;border:1px solid var(--line);
+    .kc-head{display:flex;align-items:flex-start;gap:7px}
+    .kc-ic{font-size:15px;flex:none;line-height:1.3}
+    .kc-title{flex:1;min-width:0;font-size:12.5px;font-weight:600;line-height:1.35;
+        overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+    .kc-sev{flex:none;font-size:11px}
+    .kc-metric{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+    .kc-big{font-size:20px;font-weight:800;color:var(--sev);line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+    .kc-unit{font-size:12px;font-weight:700;margin-left:1px;opacity:.85}
+    .kc-sub{font-size:11px;color:var(--muted)}
+    .kc-badges{display:flex;flex-wrap:wrap;gap:4px}
+    .kbadge{font-size:10px;font-weight:700;border-radius:6px;padding:2px 6px;border:1px solid transparent;
+        text-decoration:none;line-height:1.5;white-space:nowrap}
+    .kbadge-bad{background:#ff4d6d1c;color:#fca5a5;border-color:#ff4d6d33}
+    .kbadge-ok{background:#22e39b1c;color:#22e39b;border-color:#22e39b33}
+    .kbadge-ai{background:#c084fc1c;color:#c084fc;border-color:#c084fc33}
+    .kbadge-pr{background:#6366f11c;color:#a5b4fc;border-color:#6366f133}
+    .kacts{display:flex;flex-wrap:wrap;gap:5px;padding-top:8px;border-top:1px solid var(--line)}
+    .kacts button,.kacts a{font-size:11px;padding:4px 8px;border-radius:7px;border:1px solid var(--line);
         background:var(--card2);color:var(--text);cursor:pointer;font-weight:600;font-family:inherit;text-decoration:none}
     .kacts button:hover,.kacts a:hover{border-color:var(--accent)}
+    .kact-plan{border-color:#c084fc66!important;color:#c084fc}
+    .kact-detail{margin-left:auto;color:var(--muted)}
     .kcount{margin-left:auto;background:#0e1836;border:1px solid var(--line);border-radius:999px;padding:1px 9px;font-size:12px}
     .kempty{color:var(--muted2);font-size:12px;text-align:center;padding:16px 8px}
+
+    /* ── Modal de detalle de la incidencia ─────────────────────────────── */
+    .idt-sev-dot{width:11px;height:11px;border-radius:50%;flex:none}
+    .idt-summary{font-size:13px;color:var(--muted);line-height:1.6;margin:0 0 16px}
+    .idt-sec{margin-bottom:18px}
+    .idt-sec:last-child{margin-bottom:0}
+    .idt-sec h5{margin:0 0 9px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+        color:var(--muted2);display:flex;align-items:center;gap:9px}
+    .idt-flag{font-size:9.5px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--muted2);
+        border:1px solid var(--line);border-radius:6px;padding:1px 6px}
+    .idt-cause{margin:0;font-size:13px;line-height:1.65;color:var(--text);background:#c084fc0f;
+        border:1px solid #c084fc22;border-radius:10px;padding:11px 13px}
+    .idt-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+    .idt-grid>div{background:#0a1024;border:1px solid var(--line);border-radius:9px;padding:8px 11px;
+        display:flex;flex-direction:column;gap:2px}
+    .idt-grid span{font-size:10.5px;color:var(--muted2)}
+    .idt-grid b{font-size:12.5px;font-variant-numeric:tabular-nums}
+    .idt-chips{display:flex;flex-wrap:wrap;gap:7px}
+    .idt-chips .kchip{display:flex;flex-direction:column;gap:1px;background:#0a1024;border:1px solid var(--line);
+        border-radius:9px;padding:6px 10px;font-size:12px;font-family:inherit}
+    .idt-chips .kchip span{font-size:10px;color:var(--muted2)}
+    .idt-sql{background:#060b1c;border:1px solid var(--line);border-radius:10px;padding:12px 13px;font-size:11.5px;
+        line-height:1.6;max-height:220px;overflow:auto;white-space:pre-wrap;word-break:break-word;margin:0;
+        font-family:ui-monospace,monospace}
+    .idt-timeline{list-style:none;margin:0;padding:0 0 0 2px;border-left:2px solid var(--line);
+        display:flex;flex-direction:column;gap:1px}
+    .idt-timeline li{position:relative;padding:5px 0 5px 15px;font-size:12px;color:var(--muted);
+        display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+    .idt-ev-ic{position:absolute;left:-10px;background:var(--bg2);font-size:11px;line-height:1;padding:1px 0}
+    .idt-ev-note{color:var(--text);flex:1;min-width:120px}
+    .idt-ev-when{font-size:10.5px;color:var(--muted2);font-variant-numeric:tabular-nums}
+    .idt-ia-acts{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+    .idt-ia-text{width:100%;min-height:88px;max-height:160px;background:#0a1024;border:1px solid var(--line);
+        border-radius:9px;color:var(--muted);padding:9px 11px;font-size:11px;font-family:ui-monospace,monospace;resize:vertical}
+    @media(max-width:520px){.idt-grid{grid-template-columns:1fr}}
 
     /* ── Modal de planeación con IA ─────────────────────────────────────── */
     .pmodal{position:fixed;inset:0;background:#060a18cc;backdrop-filter:blur(4px);z-index:60;display:flex;
@@ -244,6 +297,19 @@
             </div>
         </div>
     </div>
+
+    {{-- ── Modal: detalle completo de una incidencia ───────────────────────── --}}
+    <div id="issue-modal" class="pmodal" hidden>
+        <div class="pm-box">
+            <div class="pm-head">
+                <span class="idt-sev-dot" id="im-sevdot"></span>
+                <h3 id="im-title">Detalle</h3>
+                <span id="im-sev" class="tiny muted" style="flex:none"></span>
+                <button type="button" class="pm-close" id="im-close">✕ Cerrar</button>
+            </div>
+            <div class="pm-body" id="im-body"></div>
+        </div>
+    </div>
 @endsection
 
 @push('scripts')
@@ -252,6 +318,7 @@ const CSRF = document.querySelector('meta[name=csrf-token]')?.content || '';
 const boardBody = document.getElementById('board-body');
 
 async function loadBoard(){
+    closeIssueDetail();   // si había un detalle abierto, devuélvelo antes de recargar
     boardBody.innerHTML = '<div class="list-card" style="padding:26px;text-align:center;margin-top:14px"><span class="spin"></span>'
         + '<div class="muted tiny" style="margin-top:10px">Analizando el servidor y clasificando las incidencias… unos segundos.</div></div>';
     try{
@@ -280,17 +347,19 @@ async function moveIssue(id, status){
 // Botones de columna según el estado actual (y el tipo de incidencia)
 function actionsFor(status, kind, issueId){
     const b = (s,l) => '<button data-move="'+s+'">'+l+'</button>';
+    const detail = '<button class="kact-detail" data-detail="'+issueId+'">ℹ️ Detalle</button>';
     // «Planear» solo aplica a consultas MySQL (conecta con GitHub + IA)
     const plan = (kind === 'mysql_query' && ['por_revisar','planeando'].includes(status))
-        ? '<button data-plan="'+issueId+'" style="border-color:#c084fc66;color:#c084fc">🧠 Planear</button>' : '';
+        ? '<button class="kact-plan" data-plan="'+issueId+'">🧠 Planear</button>' : '';
+    let moves = '';
     switch(status){
-        case 'por_revisar': return plan + b('optimizando','🔧 Optimizar') + b('aceptada','🔒 No aplica');
-        case 'planeando':   return plan + b('optimizando','🔧 Optimizar') + b('por_revisar','↩ Volver') + b('aceptada','🔒 No aplica');
-        case 'optimizando': return b('resuelta','✅ Resuelta') + b('aceptada','🔒 No aplica') + b('por_revisar','↩ Volver');
-        case 'resuelta':    return b('por_revisar','↩ Reabrir');
-        case 'aceptada':    return b('por_revisar','↩ Reabrir');
+        case 'por_revisar': moves = b('optimizando','🔧 Optimizar') + b('aceptada','🔒 No aplica'); break;
+        case 'planeando':   moves = b('optimizando','🔧 Optimizar') + b('por_revisar','↩ Volver') + b('aceptada','🔒 No aplica'); break;
+        case 'optimizando': moves = b('resuelta','✅ Resuelta') + b('aceptada','🔒 No aplica') + b('por_revisar','↩ Volver'); break;
+        case 'resuelta':    moves = b('por_revisar','↩ Reabrir'); break;
+        case 'aceptada':    moves = b('por_revisar','↩ Reabrir'); break;
     }
-    return '';
+    return plan + moves + detail;
 }
 
 function wireBoard(){
@@ -327,13 +396,7 @@ function relocate(card, target){
     const empty = body.querySelector('.kempty'); if(empty) empty.remove();
     card.dataset.status = target;
     const acts = card.querySelector('.kacts');
-    if(acts){
-        // conservar el enlace "ver" y el botón de copiar contexto
-        const link = acts.querySelector('a');
-        const copy = acts.querySelector('[data-copy]');
-        acts.innerHTML = actionsFor(target, card.dataset.kind, card.dataset.id)
-            + (link ? link.outerHTML : '') + (copy ? copy.outerHTML : '');
-    }
+    if(acts) acts.innerHTML = actionsFor(target, card.dataset.kind, card.dataset.id);
     body.prepend(card);
     wireBoard();
     updateCounts();
@@ -351,7 +414,6 @@ function updateCounts(){
 }
 
 document.getElementById('board-refresh').addEventListener('click', loadBoard);
-loadBoard();
 
 // ════════════════════════════════════════════════════════════════════════════
 // Modal de planeación con IA: mapeo del repo → investigación en GitHub →
@@ -374,6 +436,35 @@ document.addEventListener('click', e => {
     const btn = e.target.closest('[data-plan]');
     if(btn) openPlan(btn.dataset.plan);
 });
+
+// ── Modal de detalle: mueve el nodo .issue-detail de la tarjeta al modal ─────
+const IM = { card:null, node:null };
+function openIssueDetail(id){
+    const card = boardBody.querySelector('.kcard[data-id="'+id+'"]');
+    const node = card && card.querySelector('.issue-detail');
+    if(!node) return;
+    closeIssueDetail();
+    $id('im-title').textContent  = node.dataset.title || 'Detalle';
+    $id('im-sev').textContent    = node.dataset.sev || '';
+    $id('im-sevdot').style.background = node.dataset.sevcolor || 'transparent';
+    const body = $id('im-body'); body.innerHTML = '';
+    body.appendChild(node); node.hidden = false;
+    IM.card = card; IM.node = node;
+    $id('issue-modal').hidden = false;
+}
+function closeIssueDetail(){
+    if(IM.node && IM.card){ IM.node.hidden = true; IM.card.appendChild(IM.node); }
+    IM.card = null; IM.node = null;
+    const m = $id('issue-modal'); if(m) m.hidden = true;
+}
+document.addEventListener('click', e => {
+    const b = e.target.closest('[data-detail]');
+    if(b) openIssueDetail(b.dataset.detail);
+});
+$id('im-close').addEventListener('click', closeIssueDetail);
+$id('issue-modal').addEventListener('click', e => { if(e.target === $id('issue-modal')) closeIssueDetail(); });
+document.addEventListener('keydown', e => { if(e.key === 'Escape') closeIssueDetail(); });
+
 $id('pm-close').addEventListener('click', closePlan);
 $id('plan-modal').addEventListener('click', e => { if(e.target === $id('plan-modal')) closePlan(); });
 
@@ -744,8 +835,11 @@ document.addEventListener('click', async (e) => {
     const ta = document.getElementById(btn.dataset.copy);
     if(!ta) return;
     try{ await navigator.clipboard.writeText(ta.value); }
-    catch(_){ ta.style.display='block'; ta.focus(); ta.select(); document.execCommand('copy'); ta.style.display='none'; }
+    catch(_){ ta.focus(); ta.select(); try{ document.execCommand('copy'); }catch(_2){} }
     const t = btn.textContent; btn.textContent = '✅ Copiado'; setTimeout(()=>btn.textContent=t, 2000);
 });
+
+// Carga inicial del tablero (al final: ya están definidos $id, IM, etc.)
+loadBoard();
 </script>
 @endpush
