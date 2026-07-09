@@ -64,6 +64,12 @@
                                     @endif
                                 </div>
 
+                                {{-- Cuándo pasó (hora Colombia) --}}
+                                @php($kwhen = $isMysql && !empty($m['last_seen']) ? $m['last_seen'] : optional($issue->last_seen_at)->format('d/m/Y H:i'))
+                                <div class="kc-when" title="Hora de Colombia en que se registró esta incidencia por última vez">
+                                    🕓 {{ $isMysql ? 'Últ. ejecución' : 'Últ. vez' }}: <b>{{ $kwhen ?? '—' }}</b> <span class="kc-flag">🇨🇴</span>
+                                </div>
+
                                 {{-- Distintivos (solo si aplican) --}}
                                 @php($hasBadges = $issue->reopened_count > 0 || $issue->plan || ($isMysql && ($m['no_index_pct'] ?? 0) >= 30))
                                 @if($hasBadges)

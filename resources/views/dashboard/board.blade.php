@@ -32,6 +32,9 @@
     .kc-big{font-size:20px;font-weight:800;color:var(--sev);line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
     .kc-unit{font-size:12px;font-weight:700;margin-left:1px;opacity:.85}
     .kc-sub{font-size:11px;color:var(--muted)}
+    .kc-when{font-size:10.5px;color:var(--muted);display:flex;align-items:center;gap:5px;font-variant-numeric:tabular-nums}
+    .kc-when b{color:var(--text);font-weight:600}
+    .kc-flag{opacity:.7}
     .kc-badges{display:flex;flex-wrap:wrap;gap:4px}
     .kbadge{font-size:10px;font-weight:700;border-radius:6px;padding:2px 6px;border:1px solid transparent;
         text-decoration:none;line-height:1.5;white-space:nowrap}
