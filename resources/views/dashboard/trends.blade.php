@@ -222,8 +222,10 @@
 
         {{-- ═══ REPORTE DE EVENTOS DE PICO ═══ --}}
         <h2><span class="section-ic">🚨</span> Reporte de eventos de pico <span class="muted tiny" style="font-weight:400">· CPU ≥ {{ $threshold }}%</span>
-            <button type="button" class="btn btn-sm" style="margin-left:auto" data-copy="peaks-ai">🤖 Copiar informe para IA</button>
+            <a href="{{ route('dashboard.servers.board', $server) }}" class="btn btn-sm" style="margin-left:auto">🗂️ Tablero de rendimiento</a>
+            <button type="button" class="btn btn-sm" data-copy="peaks-ai">🤖 Copiar informe para IA</button>
         </h2>
+        <p class="muted tiny" style="margin:-4px 0 8px">💡 Ahora puedes clasificar los picos y las consultas MySQL en un <a href="{{ route('dashboard.servers.board', $server) }}" style="color:var(--accent)">tablero Kanban</a>: qué se optimizó, qué sigue fallando y qué no aplica.</p>
         <textarea id="peaks-ai" readonly style="display:none">{{ $peaksAi }}</textarea>
         <div class="grid" id="events-grid" style="gap:12px;margin-bottom:12px"></div>
         @if(empty($events))

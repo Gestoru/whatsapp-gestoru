@@ -409,6 +409,47 @@ class DashboardController extends Controller
         return view('dashboard.queries', compact('server'));
     }
 
+    /** Tablero de rendimiento (Kanban): picos + consultas como incidencias. */
+    public function board(Server $server)
+    {
+        return view('dashboard.board', compact('server'));
+    }
+
+    /** Contenido del tablero (se carga por AJAX: hace SSH y sincroniza). */
+    public function boardPanel(Server $server, \App\Services\PerfBoard $board)
+    {
+        $data = ['server' => $server, 'board' => null, 'error' => null, 'columns' => \App\Models\PerfIssue::COLUMNS];
+
+        if (! $server->hasCredentials()) {
+            $data['error'] = 'Este servidor aún no tiene credenciales configuradas.';
+        } else {
+            try {
+                $data['board'] = $board->sync($server);
+            } catch (\Throwable $e) {
+                $data['error'] = $e->getMessage();
+            }
+        }
+
+        return view('dashboard.partials.board-cards', $data);
+    }
+
+    /** Mover una incidencia de columna (Kanban). */
+    public function boardMove(Request $request, Server $server, \App\Models\PerfIssue $issue)
+    {
+        abort_unless($issue->server_id === $server->id, 404);
+
+        $status = $request->input('status');
+        abort_unless(array_key_exists($status, \App\Models\PerfIssue::COLUMNS), 422);
+
+        $issue->update([
+            'status'        => $status,
+            'status_manual' => true,
+            'resolved_at'   => in_array($status, ['resuelta', 'aceptada'], true) ? now() : null,
+        ]);
+
+        return response()->json(['ok' => true, 'status' => $status]);
+    }
+
     /** Fragmento HTML del optimizador de consultas (se carga por AJAX). */
     public function queryOptimizerPanel(Server $server, \App\Services\QueryAdvisor $advisor)
     {

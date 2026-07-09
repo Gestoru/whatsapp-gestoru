@@ -40,6 +40,9 @@ Route::middleware('dashboard.auth')->prefix('panel')->name('dashboard.')->group(
     Route::get('/servidores/{server}/en-vivo', [DashboardController::class, 'liveVisitors'])->name('servers.live');
     Route::get('/servidores/{server}/consultas', [DashboardController::class, 'queryOptimizer'])->name('servers.queries');
     Route::get('/servidores/{server}/consultas-panel', [DashboardController::class, 'queryOptimizerPanel'])->name('servers.queries.panel');
+    Route::get('/servidores/{server}/tablero', [DashboardController::class, 'board'])->name('servers.board');
+    Route::get('/servidores/{server}/tablero-panel', [DashboardController::class, 'boardPanel'])->name('servers.board.panel');
+    Route::post('/servidores/{server}/tablero/{issue}/mover', [DashboardController::class, 'boardMove'])->name('servers.board.move');
     Route::get('/servidores/{server}/estres', [StressController::class, 'form'])->name('servers.stress');
     Route::post('/servidores/{server}/estres', [StressController::class, 'run'])->name('servers.stress.run');
 
