@@ -523,9 +523,16 @@ BASH;
             '### 📦 Qué incluye este PR',
         ];
         if ($ddl) {
-            $lines[] = '- ✅ **Migración** `'.$artifacts[1].'` — crea el índice `'.$ddl['index'].'` en `'.$ddl['table'].'` (`'.implode('`, `', $ddl['columns']).'`) de forma idempotente. Aplícala con `php artisan migrate`.';
-            $lines[] = '- ✅ **Script** `'.$artifacts[2].'` — alternativa por consola (`bash '.$artifacts[2].'`), también idempotente, con `SHOW INDEX` antes/después.';
+            $lines[] = '- ✅ **Migración** `'.$artifacts[1].'` — crea el índice `'.$ddl['index'].'` en `'.$ddl['table'].'` (`'.implode('`, `', $ddl['columns']).'`) de forma idempotente, con `down()` para revertir.';
+            $lines[] = '- 🖥️ **Script** `'.$artifacts[2].'` — *opcional*, para aplicarlo a mano sin esperar al deploy (`bash '.$artifacts[2].'`).';
             $lines[] = '- 📄 **Plan completo** `'.$artifacts[0].'`.';
+            $lines[] = '';
+            $lines[] = '### ▶️ Cómo aplicar';
+            $lines[] = '1. Revisa y aprueba este PR.';
+            $lines[] = '2. Haz **merge**.';
+            $lines[] = '3. En el próximo **deploy** de esta app, `php artisan migrate` crea el índice solo (idempotente — no rompe si ya existe).';
+            $lines[] = '   · ¿Necesitas aplicarlo **ya**, sin esperar el deploy? Corre `bash '.$artifacts[2].'`.';
+            $lines[] = '4. Para revertir: `php artisan migrate:rollback` (o el `down()` de la migración).';
             $lines[] = '';
             $lines[] = '> ⚠️ El índice es el cambio **seguro y automatizable**. Otros ajustes del plan (código, `SELECT *`, posible N+1) son **manuales** — revísalos en el documento antes de mezclar.';
         } else {
