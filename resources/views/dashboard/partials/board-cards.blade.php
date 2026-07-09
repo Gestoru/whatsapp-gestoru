@@ -7,6 +7,7 @@
         $total = collect($board)->flatten(1)->count();
         $actions = [
             'por_revisar' => [['optimizando','🔧 Optimizar'], ['aceptada','🔒 No aplica']],
+            'planeando'   => [['optimizando','🔧 Optimizar'], ['por_revisar','↩ Volver'], ['aceptada','🔒 No aplica']],
             'optimizando' => [['resuelta','✅ Resuelta'], ['aceptada','🔒 No aplica'], ['por_revisar','↩ Volver']],
             'resuelta'    => [['por_revisar','↩ Reabrir']],
             'aceptada'    => [['por_revisar','↩ Reabrir']],
@@ -36,7 +37,7 @@
                         @forelse($issues as $issue)
                             @php([$sc,$sl] = $sevMeta[$issue->severity] ?? $sevMeta['media'])
                             @php($m = $issue->metrics ?? [])
-                            <div class="kcard" data-id="{{ $issue->id }}" data-status="{{ $issue->status }}" style="border-left-color:{{ $sc }}">
+                            <div class="kcard" data-id="{{ $issue->id }}" data-status="{{ $issue->status }}" data-kind="{{ $issue->kind }}" style="border-left-color:{{ $sc }}">
                                 <h4>
                                     <span>{{ $issue->kind === 'mysql_query' ? '🗄️' : '🔥' }}</span>
                                     <span style="flex:1;min-width:0;word-break:break-word">{{ $issue->title }}</span>
@@ -46,6 +47,21 @@
 
                                 @if($issue->reopened_count > 0)
                                     <div style="margin-top:6px"><span class="tag" style="background:#ff4d6d22;color:#ff4d6d;font-size:10.5px" title="Ya se había resuelto y volvió a aparecer">🔁 Reincidente ×{{ $issue->reopened_count }} · ya se había resuelto y volvió</span></div>
+                                @endif
+
+                                @if($issue->plan)
+                                    <div style="margin-top:6px;display:flex;gap:5px;flex-wrap:wrap">
+                                        @if($issue->plan->status === 'listo')
+                                            <span class="tag" style="background:#22e39b22;color:#22e39b;font-size:10.5px" title="Plan generado con IA el {{ optional($issue->plan->generated_at)->format('d/m/Y H:i') }}">✅ Plan de IA listo</span>
+                                        @elseif($issue->plan->status === 'error')
+                                            <span class="tag" style="background:#ff4d6d22;color:#ff4d6d;font-size:10.5px">⚠️ Plan con error</span>
+                                        @else
+                                            <span class="tag" style="background:#c084fc22;color:#c084fc;font-size:10.5px">🧠 Plan en curso…</span>
+                                        @endif
+                                        @if($issue->plan->github_pr_url)
+                                            <a class="tag" href="{{ $issue->plan->github_pr_url }}" target="_blank" rel="noopener" style="background:#6366f122;color:#a5b4fc;font-size:10.5px;text-decoration:none">🚀 PR en GitHub</a>
+                                        @endif
+                                    </div>
                                 @endif
 
                                 <div class="tiny muted" style="margin-top:6px;line-height:1.6">
@@ -90,6 +106,11 @@
                                 @endif
 
                                 <div class="kacts">
+                                    @if($issue->kind === 'mysql_query' && in_array($issue->status, ['por_revisar','planeando'], true))
+                                        <button data-plan="{{ $issue->id }}" style="border-color:#c084fc66;color:#c084fc">
+                                            {{ $issue->plan && $issue->plan->status === 'listo' ? '📋 Ver plan' : '🧠 Planear' }}
+                                        </button>
+                                    @endif
                                     @foreach($actions[$issue->status] ?? [] as [$st,$al])
                                         <button data-move="{{ $st }}">{{ $al }}</button>
                                     @endforeach
@@ -106,6 +127,6 @@
             @endforeach
         </div>
 
-        <p class="muted tiny" style="margin-top:14px">💡 Las tarjetas se detectan solas. Las que dejen de aparecer 30 min pasan a <b>✅ Resueltas</b> automáticamente. Si mueves una a mano, el panel respeta tu decisión (útil para los procesos de Docker que no se pueden optimizar → <b>🔒 No aplica</b>). El botón <b>🤖 IA</b> copia el contexto para pedir el plan de solución.</p>
+        <p class="muted tiny" style="margin-top:14px">💡 Las tarjetas se detectan solas. Las que dejen de aparecer 30 min pasan a <b>✅ Resueltas</b> automáticamente. Si mueves una a mano, el panel respeta tu decisión (útil para los procesos de Docker que no se pueden optimizar → <b>🔒 No aplica</b>). En las consultas MySQL, <b>🧠 Planear</b> conecta con GitHub, investiga el código y genera el plan de optimización con IA en vivo; el botón <b>🤖 IA</b> copia el contexto para usarlo por fuera.</p>
     @endif
 @endif

@@ -149,6 +149,139 @@ class GitHubService
         return ['ok' => true, 'total' => count($repos), 'created' => $created, 'updated' => $updated];
     }
 
+    // ── Investigación de repositorios (para los planes de optimización) ──────
+
+    /**
+     * Árbol completo de archivos del repo (rutas). Se usa para que la IA
+     * investigue dónde vive el código relacionado con una consulta.
+     *
+     * @return array<int, string> rutas de archivos (blobs)
+     */
+    public function tree(string $fullName, ?string $branch = null): array
+    {
+        $branch = $branch ?: $this->defaultBranch($fullName);
+        $r = $this->http()->get("/repos/{$fullName}/git/trees/{$branch}", ['recursive' => 1]);
+        if (! $r->successful()) {
+            throw new \RuntimeException("GitHub no devolvió el árbol de {$fullName}: ".$r->status());
+        }
+
+        $paths = [];
+        foreach ((array) $r->json('tree') as $node) {
+            if (($node['type'] ?? '') === 'blob') {
+                $paths[] = $node['path'];
+            }
+        }
+
+        return $paths;
+    }
+
+    /** Contenido de un archivo del repo (decodificado). null si no existe o es muy grande. */
+    public function fileContent(string $fullName, string $path, ?string $branch = null): ?string
+    {
+        $q = $branch ? ['ref' => $branch] : [];
+        $r = $this->http()->get("/repos/{$fullName}/contents/{$path}", $q);
+        if (! $r->successful()) {
+            return null;
+        }
+        $j = $r->json();
+        if (($j['encoding'] ?? '') !== 'base64' || ! isset($j['content'])) {
+            return null;
+        }
+
+        $raw = base64_decode(str_replace("\n", '', $j['content']), true);
+
+        return $raw === false ? null : $raw;
+    }
+
+    /** Rama por defecto del repo (main/master). */
+    public function defaultBranch(string $fullName): string
+    {
+        $r = $this->http()->get("/repos/{$fullName}");
+
+        return $r->successful() ? ($r->json('default_branch') ?: 'main') : 'main';
+    }
+
+    // ── Publicación de soluciones (rama + commit + pull request) ─────────────
+
+    /** SHA del último commit de una rama. */
+    public function branchSha(string $fullName, string $branch): ?string
+    {
+        $r = $this->http()->get("/repos/{$fullName}/git/ref/heads/{$branch}");
+
+        return $r->successful() ? $r->json('object.sha') : null;
+    }
+
+    /** Crea una rama a partir de la rama base. Si ya existe, la reutiliza. */
+    public function createBranch(string $fullName, string $branch, string $fromBranch): void
+    {
+        if ($this->branchSha($fullName, $branch)) {
+            return;   // ya existe
+        }
+        $sha = $this->branchSha($fullName, $fromBranch);
+        if (! $sha) {
+            throw new \RuntimeException("No se encontró la rama base «{$fromBranch}» en {$fullName}.");
+        }
+        $r = $this->http()->post("/repos/{$fullName}/git/refs", [
+            'ref' => "refs/heads/{$branch}",
+            'sha' => $sha,
+        ]);
+        if (! $r->successful()) {
+            throw new \RuntimeException('GitHub no dejó crear la rama: '.($r->json('message') ?? $r->status()));
+        }
+    }
+
+    /**
+     * Crea o actualiza un archivo en una rama (API de contents).
+     * Devuelve la URL del archivo en GitHub.
+     */
+    public function commitFile(string $fullName, string $branch, string $path, string $content, string $message): string
+    {
+        // Si el archivo ya existe en la rama necesitamos su sha para actualizarlo.
+        $existing = $this->http()->get("/repos/{$fullName}/contents/{$path}", ['ref' => $branch]);
+        $payload = [
+            'message' => $message,
+            'content' => base64_encode($content),
+            'branch'  => $branch,
+        ];
+        if ($existing->successful() && $existing->json('sha')) {
+            $payload['sha'] = $existing->json('sha');
+        }
+
+        $r = $this->http()->put("/repos/{$fullName}/contents/{$path}", $payload);
+        if (! $r->successful()) {
+            throw new \RuntimeException('GitHub no dejó guardar el archivo: '.($r->json('message') ?? $r->status()));
+        }
+
+        return $r->json('content.html_url') ?? "https://github.com/{$fullName}/blob/{$branch}/{$path}";
+    }
+
+    /**
+     * Abre un pull request. Si ya existe uno de esa rama, devuelve su URL.
+     *
+     * @return string URL del pull request
+     */
+    public function createPullRequest(string $fullName, string $branch, string $base, string $title, string $body): string
+    {
+        $r = $this->http()->post("/repos/{$fullName}/pulls", [
+            'title' => $title,
+            'head'  => $branch,
+            'base'  => $base,
+            'body'  => $body,
+        ]);
+        if ($r->successful()) {
+            return $r->json('html_url');
+        }
+
+        // ¿Ya existe un PR abierto para esa rama? Lo reutilizamos.
+        [$owner] = explode('/', $fullName);
+        $open = $this->http()->get("/repos/{$fullName}/pulls", ['head' => "{$owner}:{$branch}", 'state' => 'open']);
+        if ($open->successful() && ! empty($open->json())) {
+            return $open->json()[0]['html_url'];
+        }
+
+        throw new \RuntimeException('GitHub no dejó abrir el pull request: '.($r->json('message') ?? $r->status()));
+    }
+
     /**
      * Recorre una colección paginada de la API (100 por página).
      *

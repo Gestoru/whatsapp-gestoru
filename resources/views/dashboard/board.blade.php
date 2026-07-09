@@ -10,7 +10,7 @@
 
 @push('scripts')
 <style>
-    .kanban{display:grid;grid-template-columns:repeat(4,minmax(260px,1fr));gap:14px;align-items:start;overflow-x:auto;padding-bottom:8px}
+    .kanban{display:grid;grid-template-columns:repeat(5,minmax(235px,1fr));gap:12px;align-items:start;overflow-x:auto;padding-bottom:8px}
     .kcol{background:#0e1630;border:1px solid var(--line);border-radius:14px;min-height:120px}
     .kcol-head{padding:11px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;
         font-weight:700;font-size:14px;position:sticky;top:0;background:#0e1630;border-radius:14px 14px 0 0;z-index:1}
@@ -29,18 +29,151 @@
     .kacts button:hover,.kacts a:hover{border-color:var(--accent)}
     .kcount{margin-left:auto;background:#0e1836;border:1px solid var(--line);border-radius:999px;padding:1px 9px;font-size:12px}
     .kempty{color:var(--muted2);font-size:12px;text-align:center;padding:16px 8px}
+
+    /* ── Modal de planeación con IA ─────────────────────────────────────── */
+    .pmodal{position:fixed;inset:0;background:#060a18cc;backdrop-filter:blur(4px);z-index:60;display:flex;
+        align-items:flex-start;justify-content:center;padding:26px 14px;overflow-y:auto}
+    .pmodal[hidden]{display:none}
+    .pm-box{background:linear-gradient(180deg,#0e1630,#0b1226);border:1px solid var(--line);border-radius:16px;
+        width:min(900px,100%);box-shadow:0 24px 70px #0009;display:flex;flex-direction:column;max-height:calc(100vh - 52px)}
+    .pm-head{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
+    .pm-head h3{margin:0;font-size:15.5px;flex:1;min-width:0}
+    .pm-close{background:none;border:1px solid var(--line);color:var(--muted);border-radius:8px;cursor:pointer;
+        font-size:15px;padding:3px 10px}
+    .pm-close:hover{color:var(--text);border-color:var(--accent)}
+    .pm-body{padding:16px 18px;overflow-y:auto;flex:1}
+    .pm-phases{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+    .pm-phase{font-size:11.5px;border:1px solid var(--line);border-radius:999px;padding:4px 11px;color:var(--muted);
+        display:flex;align-items:center;gap:6px;background:#0e1836}
+    .pm-phase.on{color:#c084fc;border-color:#c084fc66}
+    .pm-phase.done{color:#22e39b;border-color:#22e39b55}
+    .pm-log{font-family:ui-monospace,monospace;font-size:11.5px;color:var(--muted);background:#0a1024;
+        border:1px solid var(--line);border-radius:10px;padding:10px 12px;max-height:150px;overflow-y:auto;
+        line-height:1.7;margin-bottom:12px}
+    .pm-think{margin-bottom:12px}
+    .pm-think pre{font-size:11px;color:#94a3c4;max-height:130px;overflow-y:auto;white-space:pre-wrap;
+        background:#0a1024;border:1px solid var(--line);border-radius:10px;padding:10px 12px;line-height:1.6;margin:6px 0 0}
+    .pm-plan{background:#0a1024;border:1px solid var(--line);border-radius:12px;padding:16px 18px;font-size:13px;
+        line-height:1.75;overflow-x:auto}
+    .pm-plan h1,.pm-plan h2,.pm-plan h3{margin:14px 0 6px;font-size:14.5px;color:#e2e8ff}
+    .pm-plan h1:first-child,.pm-plan h2:first-child{margin-top:0}
+    .pm-plan pre{background:#060b1c;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:11.5px;
+        overflow-x:auto;line-height:1.6}
+    .pm-plan code{background:#1c2748;border-radius:5px;padding:1px 5px;font-size:11.5px;font-family:ui-monospace,monospace}
+    .pm-plan pre code{background:none;padding:0}
+    .pm-plan ul,.pm-plan ol{padding-left:20px;margin:6px 0}
+    .pm-plan blockquote{border-left:3px solid #c084fc66;margin:8px 0;padding:2px 12px;color:var(--muted)}
+    .pm-check{display:flex;align-items:center;gap:10px;background:#22e39b14;border:1px solid #22e39b44;
+        border-radius:12px;padding:11px 15px;margin:12px 0;font-size:13px;font-weight:600;color:#22e39b}
+    .pm-check .big-check{width:26px;height:26px;border-radius:50%;background:#22e39b;color:#04121c;display:flex;
+        align-items:center;justify-content:center;font-size:15px;animation:pmpop .45s cubic-bezier(.2,1.6,.4,1)}
+    @keyframes pmpop{0%{transform:scale(0)}100%{transform:scale(1)}}
+    .pm-chat{border-top:1px solid var(--line);margin-top:14px;padding-top:12px}
+    .pm-msgs{display:flex;flex-direction:column;gap:8px;max-height:280px;overflow-y:auto;margin-bottom:10px}
+    .pm-msg{border-radius:11px;padding:9px 13px;font-size:12.5px;line-height:1.65;max-width:85%;white-space:pre-wrap;word-break:break-word}
+    .pm-msg.user{align-self:flex-end;background:#1d2a55;border:1px solid #31408066}
+    .pm-msg.ai{align-self:flex-start;background:#101a3a;border:1px solid var(--line)}
+    .pm-msg .who{font-size:10px;opacity:.55;display:block;margin-bottom:3px}
+    .pm-input{display:flex;gap:8px}
+    .pm-input textarea{flex:1;background:#0a1024;border:1px solid var(--line);border-radius:10px;color:var(--text);
+        padding:9px 12px;font-size:12.5px;font-family:inherit;resize:vertical;min-height:42px;max-height:120px}
+    .pm-input textarea:focus{outline:none;border-color:#c084fc88}
+    .pm-foot{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 18px;border-top:1px solid var(--line)}
+    .pm-setup{background:#101a3a;border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px}
+    .pm-setup label{display:block;font-size:11.5px;color:var(--muted);margin:8px 0 4px}
+    .pm-setup input,.pm-setup select{width:100%;background:#0a1024;border:1px solid var(--line);border-radius:9px;
+        color:var(--text);padding:8px 11px;font-size:12.5px}
+    .pm-err{background:#ff4d6d14;border:1px solid #ff4d6d44;color:#fca5a5;border-radius:10px;padding:10px 14px;
+        font-size:12.5px;margin:10px 0;line-height:1.6}
+    .pm-spin{display:inline-block;width:12px;height:12px;border:2px solid #c084fc44;border-top-color:#c084fc;
+        border-radius:50%;animation:pmspin .8s linear infinite;vertical-align:-2px}
+    @keyframes pmspin{to{transform:rotate(360deg)}}
 </style>
 @endpush
 
 @section('content')
     <h1 style="margin-bottom:4px">🗂️ Tablero de rendimiento</h1>
-    <p class="muted tiny">Todo lo que afecta el rendimiento del servidor —picos de CPU y consultas MySQL pesadas— convertido en tarjetas que puedes clasificar. Cada una trae la <b>causa probable</b> y el contexto para pedirle a una IA el plan. Arrastra o usa los botones para moverlas entre columnas; las que no se pueden optimizar (procesos de Docker, etc.) muévelas a <b>🔒 No aplica</b>.</p>
+    <p class="muted tiny">Todo lo que afecta el rendimiento del servidor —picos de CPU y consultas MySQL pesadas— convertido en tarjetas que puedes clasificar: <b>📥 por revisar → 🧠 en planeación → 🔧 en optimización → ✅ resueltas / 🔒 no aplica</b>. En las consultas MySQL, <b>🧠 Planear</b> conecta con tu GitHub, investiga el código del proyecto y genera el plan de optimización con IA en vivo.</p>
 
     <div id="board-body" data-panel="{{ route('dashboard.servers.board.panel', $server) }}"
          data-move="{{ url('panel/servidores/'.$server->id.'/tablero') }}">
         <div class="list-card" style="padding:26px;text-align:center;margin-top:14px">
             <span class="spin"></span>
             <div class="muted tiny" style="margin-top:10px">Analizando el servidor y clasificando las incidencias… unos segundos.</div>
+        </div>
+    </div>
+
+    {{-- ── Modal: plan de optimización con IA ─────────────────────────────── --}}
+    <div id="plan-modal" class="pmodal" hidden>
+        <div class="pm-box">
+            <div class="pm-head">
+                <span style="font-size:19px">🧠</span>
+                <h3>Plan de optimización con IA <span id="pm-sub" class="muted tiny" style="font-weight:400"></span></h3>
+                <button type="button" class="pm-close" id="pm-close">✕ Cerrar</button>
+            </div>
+            <div class="pm-body">
+                {{-- Configuración previa: clave de IA y mapeo del repositorio --}}
+                <div id="pm-setup" class="pm-setup" hidden>
+                    <div id="pm-setup-key" hidden>
+                        <div class="tiny" style="font-weight:600">🔑 Conectar la IA (una sola vez)</div>
+                        <label>Clave de la API de Anthropic (se guarda cifrada en el panel)</label>
+                        <div style="display:flex;gap:8px">
+                            <input type="password" id="pm-key" placeholder="sk-ant-…" autocomplete="off">
+                            <button class="btn btn-sm" id="pm-key-save">Guardar</button>
+                        </div>
+                    </div>
+                    <div id="pm-setup-repo" hidden>
+                        <div class="tiny" style="font-weight:600">🔗 ¿A qué proyecto pertenece esta consulta?</div>
+                        <label>La base de datos <b id="pm-db" style="color:#c084fc">—</b> se mapeará a este repositorio de GitHub (se recuerda para las próximas consultas de la misma base):</label>
+                        <div style="display:flex;gap:8px">
+                            <select id="pm-repo"></select>
+                            <button class="btn btn-sm" id="pm-repo-save">Guardar mapeo</button>
+                        </div>
+                        <div class="tiny muted" id="pm-repo-hint" style="margin-top:6px"></div>
+                    </div>
+                </div>
+
+                {{-- Fases del proceso --}}
+                <div class="pm-phases" id="pm-phases" hidden>
+                    <span class="pm-phase" data-phase="repo">🔗 Repositorio</span>
+                    <span class="pm-phase" data-phase="investigando">🔍 Investigación del código</span>
+                    <span class="pm-phase" data-phase="generando">🧠 Generación del plan</span>
+                    <span class="pm-phase" data-phase="listo">✅ Listo</span>
+                </div>
+
+                <div class="pm-log" id="pm-log" hidden></div>
+
+                <details class="pm-think" id="pm-think" hidden>
+                    <summary class="tiny" style="cursor:pointer;color:#94a3c4">🧩 Razonamiento de la IA (en vivo)</summary>
+                    <pre id="pm-think-body"></pre>
+                </details>
+
+                <div class="pm-err" id="pm-error" hidden></div>
+
+                <div class="pm-check" id="pm-check" hidden>
+                    <span class="big-check">✓</span>
+                    <span>Plan terminado. Léelo abajo y, si quieres ajustarlo, escríbele a la IA en el chat.</span>
+                </div>
+
+                <div class="pm-plan" id="pm-plan" hidden></div>
+
+                {{-- Chat para leer/ajustar el plan --}}
+                <div class="pm-chat" id="pm-chat" hidden>
+                    <div class="tiny" style="font-weight:600;margin-bottom:8px">💬 Ajustar el plan con la IA</div>
+                    <div class="pm-msgs" id="pm-msgs"></div>
+                    <div class="pm-input">
+                        <textarea id="pm-msg" placeholder="Ej.: agrega el SQL para revertir el índice, o explícame el paso 2…"></textarea>
+                        <button class="btn btn-sm" id="pm-send">Enviar</button>
+                    </div>
+                </div>
+            </div>
+            <div class="pm-foot">
+                <button class="btn btn-sm" id="pm-generate" hidden>🧠 Generar plan</button>
+                <button class="btn btn-ghost btn-sm" id="pm-regenerate" hidden>🔄 Regenerar plan</button>
+                <span style="flex:1"></span>
+                <span class="tiny muted" id="pm-pushed" hidden></span>
+                <button class="btn btn-sm" id="pm-publish" hidden style="border-color:#22e39b66;color:#22e39b">🚀 Subir solución a GitHub</button>
+            </div>
         </div>
     </div>
 @endsection
@@ -76,11 +209,15 @@ async function moveIssue(id, status){
     }catch(_){ return false; }
 }
 
-// Botones de columna según el estado actual
-function actionsFor(status){
+// Botones de columna según el estado actual (y el tipo de incidencia)
+function actionsFor(status, kind, issueId){
     const b = (s,l) => '<button data-move="'+s+'">'+l+'</button>';
+    // «Planear» solo aplica a consultas MySQL (conecta con GitHub + IA)
+    const plan = (kind === 'mysql_query' && ['por_revisar','planeando'].includes(status))
+        ? '<button data-plan="'+issueId+'" style="border-color:#c084fc66;color:#c084fc">🧠 Planear</button>' : '';
     switch(status){
-        case 'por_revisar': return b('optimizando','🔧 Optimizar') + b('aceptada','🔒 No aplica');
+        case 'por_revisar': return plan + b('optimizando','🔧 Optimizar') + b('aceptada','🔒 No aplica');
+        case 'planeando':   return plan + b('optimizando','🔧 Optimizar') + b('por_revisar','↩ Volver') + b('aceptada','🔒 No aplica');
         case 'optimizando': return b('resuelta','✅ Resuelta') + b('aceptada','🔒 No aplica') + b('por_revisar','↩ Volver');
         case 'resuelta':    return b('por_revisar','↩ Reabrir');
         case 'aceptada':    return b('por_revisar','↩ Reabrir');
@@ -123,9 +260,11 @@ function relocate(card, target){
     card.dataset.status = target;
     const acts = card.querySelector('.kacts');
     if(acts){
-        // conservar el enlace "ver" si existe
+        // conservar el enlace "ver" y el botón de copiar contexto
         const link = acts.querySelector('a');
-        acts.innerHTML = actionsFor(target) + (link ? link.outerHTML : '');
+        const copy = acts.querySelector('[data-copy]');
+        acts.innerHTML = actionsFor(target, card.dataset.kind, card.dataset.id)
+            + (link ? link.outerHTML : '') + (copy ? copy.outerHTML : '');
     }
     body.prepend(card);
     wireBoard();
@@ -145,6 +284,288 @@ function updateCounts(){
 
 document.getElementById('board-refresh').addEventListener('click', loadBoard);
 loadBoard();
+
+// ════════════════════════════════════════════════════════════════════════════
+// Modal de planeación con IA: mapeo del repo → investigación en GitHub →
+// plan generado en vivo → chulito verde → chat de ajustes → subir a GitHub.
+// ════════════════════════════════════════════════════════════════════════════
+const $id = s => document.getElementById(s);
+const PM = { issueId:null, state:null, es:null, raw:'', streaming:false };
+const planUrl = (id, sfx) => boardBody.dataset.move + '/' + id + '/plan' + (sfx || '');
+const AI_KEY_URL = @json(route('dashboard.ai.key'));
+
+document.addEventListener('click', e => {
+    const btn = e.target.closest('[data-plan]');
+    if(btn) openPlan(btn.dataset.plan);
+});
+$id('pm-close').addEventListener('click', closePlan);
+$id('plan-modal').addEventListener('click', e => { if(e.target === $id('plan-modal')) closePlan(); });
+
+function show(id, on){ $id(id).hidden = !on; }
+function showError(msg){ $id('pm-error').textContent = '⚠️ ' + msg; show('pm-error', true); }
+function log(line){ const l = $id('pm-log'); l.innerHTML += line.replace(/</g,'&lt;') + '<br>'; l.scrollTop = l.scrollHeight; }
+function setPhase(name, cls){
+    const el = document.querySelector('.pm-phase[data-phase="'+name+'"]');
+    if(el){ el.classList.remove('on','done'); if(cls) el.classList.add(cls); }
+}
+
+function resetModal(){
+    ['pm-setup','pm-setup-key','pm-setup-repo','pm-phases','pm-log','pm-think','pm-error',
+     'pm-check','pm-plan','pm-chat','pm-generate','pm-regenerate','pm-publish','pm-pushed'].forEach(i => show(i, false));
+    $id('pm-log').innerHTML = ''; $id('pm-think-body').textContent = '';
+    $id('pm-plan').innerHTML = ''; $id('pm-msgs').innerHTML = '';
+    document.querySelectorAll('.pm-phase').forEach(p => p.classList.remove('on','done'));
+    PM.raw = ''; PM.streaming = false;
+}
+
+function closePlan(){
+    if(PM.es){ PM.es.close(); PM.es = null; }
+    show('plan-modal', false);
+    loadBoard();   // refresca badges y columnas
+}
+
+async function openPlan(issueId){
+    PM.issueId = issueId;
+    resetModal();
+    show('plan-modal', true);
+    $id('pm-sub').textContent = '· incidencia #' + issueId;
+    try{
+        const r = await fetch(planUrl(issueId, ''), {headers:{'X-Requested-With':'XMLHttpRequest'}});
+        if(!r.ok) throw new Error('HTTP ' + r.status);
+        PM.state = await r.json();
+    }catch(e){ showError('No se pudo cargar el estado del plan (' + e.message + ')'); return; }
+    renderState();
+}
+
+function renderState(){
+    const s = PM.state;
+    $id('pm-db').textContent = s.db || '—';
+    let pendiente = false;
+
+    if(!s.ai_configured){ show('pm-setup-key', true); pendiente = true; }
+    if(!s.repo){
+        const sel = $id('pm-repo');
+        sel.innerHTML = (s.repos || []).map(r =>
+            '<option value="'+r.id+'">'+r.full_name+(r.language ? ' · '+r.language : '')+'</option>').join('');
+        $id('pm-repo-hint').textContent = (s.repos || []).length
+            ? '' : 'No hay repositorios sincronizados. Ve al módulo Repositorios, conecta GitHub y sincroniza; luego vuelve aquí.';
+        show('pm-setup-repo', true); pendiente = true;
+    }
+    show('pm-setup', pendiente);
+
+    const p = s.plan;
+    if(p && p.status === 'listo' && p.plan){
+        PM.raw = p.plan;
+        show('pm-check', true);
+        renderPlan(p.plan); show('pm-plan', true);
+        show('pm-chat', true); renderChat(p.chat || []);
+        show('pm-regenerate', !pendiente);
+        show('pm-publish', !pendiente && s.github_configured);
+        if(p.github_pr_url){
+            $id('pm-pushed').innerHTML = '🚀 Publicado' + (p.pushed_at ? ' el ' + p.pushed_at : '')
+                + ' · <a href="' + p.github_pr_url + '" target="_blank" rel="noopener" style="color:#a5b4fc">ver pull request</a>';
+            show('pm-pushed', true);
+        }
+    } else {
+        if(p && p.status === 'error' && p.error) showError('El último intento falló: ' + p.error);
+        show('pm-generate', !pendiente);
+    }
+}
+
+// ── Guardar clave de IA y mapeo del repositorio ──────────────────────────────
+$id('pm-key-save').addEventListener('click', async () => {
+    const key = $id('pm-key').value.trim();
+    if(!key) return;
+    const r = await fetch(AI_KEY_URL, {method:'POST',
+        headers:{'X-CSRF-TOKEN':CSRF,'Content-Type':'application/json',Accept:'application/json'},
+        body: JSON.stringify({api_key:key})});
+    if(r.ok){ $id('pm-key').value=''; openPlan(PM.issueId); }
+    else showError('No se pudo guardar la clave.');
+});
+
+$id('pm-repo-save').addEventListener('click', async () => {
+    const id = $id('pm-repo').value;
+    if(!id) return;
+    const r = await fetch(planUrl(PM.issueId, '/repo'), {method:'POST',
+        headers:{'X-CSRF-TOKEN':CSRF,'Content-Type':'application/json',Accept:'application/json'},
+        body: JSON.stringify({repository_id:id})});
+    if(r.ok) openPlan(PM.issueId);
+    else showError('No se pudo guardar el mapeo.');
+});
+
+// ── Generación del plan EN VIVO (Server-Sent Events) ─────────────────────────
+$id('pm-generate').addEventListener('click', startGeneration);
+$id('pm-regenerate').addEventListener('click', startGeneration);
+
+function startGeneration(){
+    ['pm-generate','pm-regenerate','pm-check','pm-error','pm-chat','pm-publish','pm-pushed','pm-setup'].forEach(i => show(i, false));
+    $id('pm-plan').innerHTML = ''; $id('pm-log').innerHTML = ''; $id('pm-think-body').textContent = '';
+    ['pm-phases','pm-log','pm-plan'].forEach(i => show(i, true));
+    setPhase('repo','done'); setPhase('investigando','on');
+    setPhase('generando',''); setPhase('listo','');
+    PM.raw = ''; PM.streaming = true;
+    log('🔗 Repositorio: ' + (PM.state.repo ? PM.state.repo.full_name : '—'));
+
+    const es = PM.es = new EventSource(planUrl(PM.issueId, '/stream'));
+    es.addEventListener('paso',    e => log('• ' + JSON.parse(e.data).m));
+    es.addEventListener('archivo', e => log('📄 Leyendo ' + JSON.parse(e.data).m));
+    es.addEventListener('fase', e => {
+        if(JSON.parse(e.data).fase === 'generando'){ setPhase('investigando','done'); setPhase('generando','on'); }
+    });
+    es.addEventListener('razonando', e => {
+        show('pm-think', true);
+        const b = $id('pm-think-body');
+        b.textContent += JSON.parse(e.data).m; b.scrollTop = b.scrollHeight;
+    });
+    es.addEventListener('texto', e => {
+        PM.raw += JSON.parse(e.data).m;
+        renderPlan(PM.raw);
+        const bd = document.querySelector('.pm-body'); bd.scrollTop = bd.scrollHeight;
+    });
+    es.addEventListener('listo', e => {
+        const d = JSON.parse(e.data);
+        PM.raw = d.plan || PM.raw; renderPlan(PM.raw);
+        setPhase('generando','done'); setPhase('listo','done');
+        es.close(); PM.es = null; PM.streaming = false;
+        show('pm-check', true); show('pm-chat', true);
+        show('pm-regenerate', true);
+        if(PM.state.github_configured) show('pm-publish', true);
+        $id('pm-check').scrollIntoView({behavior:'smooth', block:'center'});
+    });
+    es.addEventListener('error', e => {
+        let msg = 'Se perdió la conexión durante la generación. Reintenta.';
+        try{ if(e.data) msg = JSON.parse(e.data).m; }catch(_){}
+        if(PM.streaming){ showError(msg); show('pm-generate', true); }
+        if(PM.es){ PM.es.close(); PM.es = null; } PM.streaming = false;
+    });
+}
+
+// ── Chat para leer/ajustar el plan ───────────────────────────────────────────
+$id('pm-send').addEventListener('click', sendChat);
+$id('pm-msg').addEventListener('keydown', e => {
+    if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); sendChat(); }
+});
+
+function addMsg(role, text){
+    const d = document.createElement('div');
+    d.className = 'pm-msg ' + (role === 'user' ? 'user' : 'ai');
+    d.innerHTML = '<span class="who">' + (role === 'user' ? 'Tú' : '🧠 IA') + '</span><span class="body"></span>';
+    d.querySelector('.body').textContent = text;
+    $id('pm-msgs').appendChild(d);
+    $id('pm-msgs').scrollTop = $id('pm-msgs').scrollHeight;
+    return d;
+}
+function renderChat(history){
+    $id('pm-msgs').innerHTML = '';
+    history.forEach(m => addMsg(m.role, m.content));
+}
+
+async function sendChat(){
+    const ta = $id('pm-msg'); const msg = ta.value.trim();
+    if(!msg || PM.streaming) return;
+    ta.value = ''; addMsg('user', msg);
+    const ai = addMsg('ai', ''); ai.querySelector('.body').innerHTML = '<span class="pm-spin"></span>';
+    PM.streaming = true;
+    try{
+        const r = await fetch(planUrl(PM.issueId, '/chat'), {method:'POST',
+            headers:{'X-CSRF-TOKEN':CSRF,'Content-Type':'application/json'},
+            body: JSON.stringify({message:msg})});
+        if(!r.ok || !r.body) throw new Error('HTTP ' + r.status);
+
+        const reader = r.body.getReader(); const dec = new TextDecoder();
+        let buf = '', text = '';
+        const handle = (ev, d) => {
+            if(ev === 'texto'){
+                text += d.m; ai.querySelector('.body').textContent = text;
+                $id('pm-msgs').scrollTop = $id('pm-msgs').scrollHeight;
+            } else if(ev === 'texto_fin_visible'){
+                ai.querySelector('.body').textContent = text + '\n\n✏️ Actualizando el plan…';
+            } else if(ev === 'listo'){
+                ai.querySelector('.body').textContent = d.reply || text;
+                if(d.plan_actualizado && d.plan){
+                    PM.raw = d.plan; renderPlan(PM.raw);
+                    log('✏️ Plan actualizado desde el chat');
+                }
+            } else if(ev === 'error'){
+                ai.querySelector('.body').textContent = '⚠️ ' + (d.m || 'Error al contactar la IA.');
+            }
+        };
+        while(true){
+            const {done, value} = await reader.read();
+            if(done) break;
+            buf += dec.decode(value, {stream:true});
+            let i;
+            while((i = buf.indexOf('\n\n')) >= 0){
+                const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+                let ev = 'message', data = null;
+                chunk.split('\n').forEach(line => {
+                    if(line.startsWith('event: ')) ev = line.slice(7).trim();
+                    else if(line.startsWith('data: ')){ try{ data = JSON.parse(line.slice(6)); }catch(_){} }
+                });
+                if(data !== null) handle(ev, data);
+            }
+        }
+    }catch(e){
+        ai.querySelector('.body').textContent = '⚠️ No se pudo contactar la IA (' + e.message + ').';
+    }
+    PM.streaming = false;
+}
+
+// ── Subir la solución a GitHub (rama + archivo + pull request) ──────────────
+$id('pm-publish').addEventListener('click', async () => {
+    const btn = $id('pm-publish');
+    btn.disabled = true; btn.innerHTML = '<span class="pm-spin"></span> Publicando…';
+    try{
+        const r = await fetch(planUrl(PM.issueId, '/publicar'), {method:'POST',
+            headers:{'X-CSRF-TOKEN':CSRF, Accept:'application/json'}});
+        const d = await r.json();
+        if(d.ok){
+            $id('pm-pushed').innerHTML = '🚀 Publicado ahora · <a href="' + d.pr_url
+                + '" target="_blank" rel="noopener" style="color:#a5b4fc">ver pull request</a>';
+            show('pm-pushed', true);
+            btn.innerHTML = '✅ Publicado en GitHub';
+        } else {
+            showError(d.error || 'No se pudo publicar.');
+            btn.disabled = false; btn.innerHTML = '🚀 Subir solución a GitHub';
+        }
+    }catch(e){
+        showError('No se pudo publicar (' + e.message + ').');
+        btn.disabled = false; btn.innerHTML = '🚀 Subir solución a GitHub';
+    }
+});
+
+// ── Mini-renderizador de Markdown para el plan ───────────────────────────────
+function renderPlan(md){
+    $id('pm-plan').innerHTML = mdRender(md || '');
+    show('pm-plan', true);
+}
+function mdRender(md){
+    const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    let out = '';
+    const parts = String(md).split('```');
+    for(let i = 0; i < parts.length; i++){
+        if(i % 2 === 1){   // bloque de código
+            let code = parts[i]; const nl = code.indexOf('\n');
+            if(nl >= 0) code = code.slice(nl + 1);   // quita el nombre del lenguaje
+            out += '<pre><code>' + esc(code) + '</code></pre>';
+            continue;
+        }
+        let t = esc(parts[i]);
+        t = t.replace(/^#### (.*)$/gm,'<h3>$1</h3>')
+             .replace(/^### (.*)$/gm,'<h3>$1</h3>')
+             .replace(/^## (.*)$/gm,'<h2>$1</h2>')
+             .replace(/^# (.*)$/gm,'<h1>$1</h1>')
+             .replace(/^&gt; ?(.*)$/gm,'<blockquote>$1</blockquote>')
+             .replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>')
+             .replace(/`([^`]+)`/g,'<code>$1</code>')
+             .replace(/^\s*[-*] (.*)$/gm,'<li>$1</li>')
+             .replace(/^\s*(\d+)[\.)] (.*)$/gm,'<li><b>$1.</b> $2</li>');
+        t = t.replace(/(?:<li>[\s\S]*?<\/li>\n?)+/g, m => '<ul>' + m.replace(/\n/g,'') + '</ul>');
+        t = t.replace(/\n{2,}/g,'<br>').replace(/\n/g,'<br>');
+        out += t;
+    }
+    return out;
+}
 
 // Copiar contexto para IA (delegado)
 document.addEventListener('click', async (e) => {

@@ -27,4 +27,8 @@ return [
     // instante (sin esperar el muestreo de 5 min) y suena la alarma sísmica.
     'cpu_critical_threshold' => (int) env('DASHBOARD_CPU_CRITICAL', 90),
 
+    // Modelo de IA (API de Anthropic) para generar los planes de optimización
+    // del tablero. Se puede sobreescribir con ANTHROPIC_MODEL en el .env.
+    'ai_model' => env('ANTHROPIC_MODEL', 'claude-opus-4-8'),
+
 ];

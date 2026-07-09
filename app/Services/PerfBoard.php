@@ -56,7 +56,7 @@ class PerfBoard
             });
 
         $issues = PerfIssue::where('server_id', $server->id)
-            ->with(['events' => fn ($q) => $q->limit(12)])
+            ->with(['events' => fn ($q) => $q->limit(12), 'plan'])
             ->orderByDesc('score')
             ->get();
 

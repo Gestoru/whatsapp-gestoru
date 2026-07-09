@@ -5,6 +5,7 @@ use App\Http\Controllers\ConfigController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DomainAdminController;
 use App\Http\Controllers\DomainController;
+use App\Http\Controllers\PlanController;
 use App\Http\Controllers\ProviderController;
 use App\Http\Controllers\RepositoryController;
 use App\Http\Controllers\ServerController;
@@ -43,6 +44,14 @@ Route::middleware('dashboard.auth')->prefix('panel')->name('dashboard.')->group(
     Route::get('/servidores/{server}/tablero', [DashboardController::class, 'board'])->name('servers.board');
     Route::get('/servidores/{server}/tablero-panel', [DashboardController::class, 'boardPanel'])->name('servers.board.panel');
     Route::post('/servidores/{server}/tablero/{issue}/mover', [DashboardController::class, 'boardMove'])->name('servers.board.move');
+
+    // Planeación con IA (tablero → «Planear» sobre una consulta MySQL)
+    Route::get('/servidores/{server}/tablero/{issue}/plan', [PlanController::class, 'state'])->name('servers.plan.state');
+    Route::post('/servidores/{server}/tablero/{issue}/plan/repo', [PlanController::class, 'mapRepo'])->name('servers.plan.repo');
+    Route::get('/servidores/{server}/tablero/{issue}/plan/stream', [PlanController::class, 'stream'])->name('servers.plan.stream');
+    Route::post('/servidores/{server}/tablero/{issue}/plan/chat', [PlanController::class, 'chat'])->name('servers.plan.chat');
+    Route::post('/servidores/{server}/tablero/{issue}/plan/publicar', [PlanController::class, 'publish'])->name('servers.plan.publish');
+    Route::post('/ia/clave', [PlanController::class, 'saveAiKey'])->name('ai.key');
     Route::get('/servidores/{server}/estres', [StressController::class, 'form'])->name('servers.stress');
     Route::post('/servidores/{server}/estres', [StressController::class, 'run'])->name('servers.stress.run');
 

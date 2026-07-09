@@ -18,10 +18,15 @@ class PerfIssueEvent extends Model
     public function icon(): string
     {
         return [
-            'detectada'     => '🔍',
-            'reaparecio'    => '🔁',
-            'resuelta_auto' => '✅',
-            'movida'        => '↔️',
+            'detectada'       => '🔍',
+            'reaparecio'      => '🔁',
+            'resuelta_auto'   => '✅',
+            'movida'          => '↔️',
+            'plan_iniciado'   => '🧠',
+            'plan_listo'      => '📋',
+            'plan_modificado' => '✏️',
+            'plan_publicado'  => '🚀',
+            'plan_error'      => '⚠️',
         ][$this->type] ?? '•';
     }
 

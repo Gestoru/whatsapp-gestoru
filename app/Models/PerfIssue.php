@@ -29,6 +29,7 @@ class PerfIssue extends Model
     /** Columnas del tablero, en orden. */
     public const COLUMNS = [
         'por_revisar' => ['📥', 'Por revisar',     '#7dd3fc'],
+        'planeando'   => ['🧠', 'En planeación',   '#c084fc'],
         'optimizando' => ['🔧', 'En optimización', '#fbbf24'],
         'resuelta'    => ['✅', 'Resueltas',        '#22e39b'],
         'aceptada'    => ['🔒', 'No aplica',        '#94a3c4'],
@@ -42,6 +43,12 @@ class PerfIssue extends Model
     public function events(): HasMany
     {
         return $this->hasMany(PerfIssueEvent::class)->orderByDesc('happened_at');
+    }
+
+    /** Plan de optimización generado con IA (el más reciente). */
+    public function plan(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(PerfPlan::class)->latestOfMany();
     }
 
     /** Registra un evento en la trazabilidad de esta incidencia. */
