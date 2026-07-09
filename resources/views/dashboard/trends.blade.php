@@ -522,6 +522,45 @@ const modal = document.getElementById('point-modal');
 const modalBody = document.getElementById('point-modal-body');
 function escP(s){ return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
+// Traduce el proceso/contenedor técnico a una explicación en lenguaje normal
+function plainExplain(s){
+    const t = ((s.proc || '') + ' ' + (s.cont || '')).toLowerCase();
+    const has = (...w) => w.some(x => t.includes(x));
+    let icon = '🧭', txt;
+
+    if(has('cc1','gcc','g++','clang','make','ld ','/cc1','configure','cmake')){
+        icon = '🔨'; txt = 'Se estaba <b>compilando/instalando software</b> (construyendo un programa desde su código). Es normal durante una instalación o actualización y suele durar poco. Si no estabas instalando nada, pudo ser una dependencia compilándose sola.';
+    } else if(has('mysqld','mariadb','mysql','postgres')){
+        icon = '🗄️'; txt = 'La <b>base de datos</b> estaba resolviendo consultas pesadas en ese momento. Es la causa más común de picos: revisa el optimizador de consultas para ver cuáles.';
+    } else if(has('php-fpm','php_fpm','php ','artisan')){
+        icon = '🌐'; txt = 'La <b>aplicación web (PHP)</b> estaba atendiendo peticiones o un proceso pesado. Suele pasar cuando hay muchos usuarios a la vez o una pantalla/reporte costoso.';
+    } else if(has('queue','worker','horizon','supervisor')){
+        icon = '⚙️'; txt = 'Un <b>trabajo en segundo plano</b> (cola de tareas) estaba corriendo: envíos, reportes, sincronizaciones. Normal, salvo que se repita mucho.';
+    } else if(has('node','npm','yarn','next','vite')){
+        icon = '🟩'; txt = 'Un proceso de <b>JavaScript/Node</b> de la aplicación estaba trabajando (una app, un build o una tarea de front-end).';
+    } else if(has('mysqldump','tar','gzip','gz','zip','rsync','backup','borg','restic','dump')){
+        icon = '💾'; txt = 'Se estaba haciendo un <b>respaldo o comprimiendo archivos</b>. Consume CPU un rato y es esperable si tienes copias de seguridad programadas.';
+    } else if(has('cron','crond')){
+        icon = '⏰'; txt = 'Una <b>tarea programada</b> (cron) se ejecutó a esa hora. Si el pico se repite siempre a la misma hora, casi seguro es esto.';
+    } else if(has('apt','dpkg','unattended','composer','pip','snap')){
+        icon = '📦'; txt = 'El servidor estaba <b>instalando o actualizando paquetes</b>. Ocurre en despliegues o en actualizaciones automáticas del sistema.';
+    } else if(has('dockerd','containerd')){
+        icon = '🐳'; txt = 'La carga venía de <b>algún contenedor Docker</b> (el proceso «dockerd» es solo el motor). El consumo real es de una app adentro; si es la base de datos, revisa sus consultas.';
+    } else if(has('nginx','apache','caddy')){
+        icon = '🌐'; txt = 'El <b>servidor web</b> estaba atendiendo mucho tráfico en ese instante.';
+    } else if(!s.proc){
+        icon = 'ℹ️'; txt = 'No quedó registrado qué proceso lo causó en esta muestra. Los picos capturados de aquí en adelante sí traen el detalle.';
+    } else {
+        icon = '🧭'; txt = 'Un proceso del sistema (<b>' + escP((s.proc||'').split(/\s+/)[0]) + '</b>) consumió CPU en ese momento. Si se repite, conviene revisar si es una tarea programada o un pico de uso.';
+    }
+
+    const level = s.crit
+        ? 'La CPU llegó a un nivel <b>crítico</b>, así que el servidor pudo sentirse lento unos segundos.'
+        : (s.cpu >= 70 ? 'La CPU estuvo <b>alta</b> pero manejable.' : 'Fue un consumo <b>normal</b>, sin afectación.');
+
+    return icon + ' ' + txt + ' ' + level;
+}
+
 function openDetail(s){
     const critColor = s.crit ? '#ff4d6d' : (s.cpu >= 70 ? '#fbbf24' : '#22e39b');
     const badge = s.crit
@@ -543,7 +582,12 @@ function openDetail(s){
         + gauge('Carga 1m', s.load, '', '#7dd3fc')
         + '</div>';
 
-    html += '<div style="margin-top:14px"><div class="tiny" style="font-weight:700;color:var(--muted);margin-bottom:6px">🔥 QUÉ CONSUMÍA EN ESE MOMENTO</div>';
+    // En palabras sencillas (no técnico)
+    html += '<div style="margin-top:14px;background:#0e1836;border:1px solid #2b3a66;border-radius:10px;padding:11px 13px">'
+        + '<div class="tiny" style="font-weight:700;color:#7dd3fc;margin-bottom:5px">🧭 EN PALABRAS SENCILLAS</div>'
+        + '<div style="font-size:13px;line-height:1.65;color:#dbe4f5">' + plainExplain(s) + '</div></div>';
+
+    html += '<div style="margin-top:14px"><div class="tiny" style="font-weight:700;color:var(--muted);margin-bottom:6px">🔥 QUÉ CONSUMÍA EN ESE MOMENTO <span style="font-weight:400">(detalle técnico)</span></div>';
     if(s.proc){
         html += '<div class="tiny" style="font-family:ui-monospace,monospace;color:#fca5a5;word-break:break-all">'
             + escP(s.proc) + (s.procPct ? ' <b>(' + s.procPct + '%)</b>' : '') + '</div>';
