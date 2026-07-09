@@ -52,7 +52,7 @@
                 <div class="empty" style="padding:20px"><span class="muted tiny">performance_schema no tiene datos aún (o está desactivado). Esta tabla se llena sola con el uso.</span></div>
             @else
                 <table>
-                    <thead><tr><th>Base de datos</th><th style="text-align:right">Tiempo total</th><th style="text-align:right">Veces</th><th style="text-align:right">Promedio</th><th style="text-align:right">Última vez</th><th>Consulta</th></tr></thead>
+                    <thead><tr><th>Base de datos</th><th style="text-align:right">Tiempo total</th><th style="text-align:right">Veces</th><th style="text-align:right">Promedio</th><th style="text-align:right">Última vez <span class="muted" style="font-weight:400">🇨🇴</span></th><th>Consulta</th></tr></thead>
                     <tbody>
                     @foreach($report['mysql_top'] as $q)
                         <tr>

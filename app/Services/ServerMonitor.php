@@ -618,6 +618,21 @@ SH;
         $mysqlTop  = $this->parsePipeTable($sections['MYSQLTOP'] ?? '', ['db', 'total_s', 'execs', 'avg_ms', 'last_seen', 'query']);
         $mysqlVia  = trim($sections['MYSQLVIA'] ?? '');
 
+        // Pasar la hora "última vez" de MySQL a la zona del panel (America/Bogota)
+        $tzLine    = trim($this->nonEmptyLines($sections['MYSQLTZ'] ?? '')[0] ?? '');
+        $mysqlOff  = is_numeric($tzLine) ? (int) $tzLine : 0;
+        $delta     = now()->utcOffset() * 60 - $mysqlOff;
+        foreach ($mysqlTop as &$row) {
+            $ts = trim($row['last_seen'] ?? '');
+            if ($ts !== '' && $ts !== '-') {
+                try {
+                    $row['last_seen'] = \Illuminate\Support\Carbon::parse($ts)->addSeconds($delta)->format('d/m H:i');
+                } catch (\Throwable) {
+                }
+            }
+        }
+        unset($row);
+
         return [
             'top_summary' => $this->nonEmptyLines($sections['TOPSUMMARY'] ?? ''),
             'cpu'         => $this->parsePsLines($sections['CPUTOP'] ?? ''),
@@ -1049,12 +1064,14 @@ elif command -v docker >/dev/null 2>&1; then
 fi
 echo "==MYSQLVIA=="
 [ -n "\$MYSQL" ] && echo "\$VIA"
+echo "==MYSQLTZ=="
+[ -n "\$MYSQL" ] && \$MYSQL -N -B -e "SELECT TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), NOW())" 2>/dev/null
 echo "==MYSQLPROC=="
 [ -n "\$MYSQL" ] && \$MYSQL -N -B -e "SELECT id,user,COALESCE(db,'-'),time,COALESCE(state,'-'),COALESCE(LEFT(info,80),'-') FROM information_schema.processlist WHERE command<>'Sleep' AND info IS NOT NULL AND info NOT LIKE '%information_schema.processlist%' ORDER BY time DESC LIMIT 15" 2>/dev/null
 echo "==MYSQLDB=="
 [ -n "\$MYSQL" ] && \$MYSQL -N -B -e "SELECT table_schema, ROUND(SUM(data_length+index_length)/1048576,1) FROM information_schema.tables GROUP BY table_schema ORDER BY 2 DESC LIMIT 12" 2>/dev/null
 echo "==MYSQLTOP=="
-[ -n "\$MYSQL" ] && \$MYSQL -N -B -e "SELECT COALESCE(SCHEMA_NAME,'-'), ROUND(SUM_TIMER_WAIT/1000000000000,1), COUNT_STAR, ROUND(SUM_TIMER_WAIT/COUNT_STAR/1000000000,1), DATE_FORMAT(LAST_SEEN,'%d/%m %H:%i'), LEFT(REPLACE(REPLACE(DIGEST_TEXT,'\\n',' '),'\\t',' '),90) FROM performance_schema.events_statements_summary_by_digest WHERE SCHEMA_NAME IS NOT NULL AND DIGEST_TEXT IS NOT NULL ORDER BY SUM_TIMER_WAIT DESC LIMIT 12" 2>/dev/null
+[ -n "\$MYSQL" ] && \$MYSQL -N -B -e "SELECT COALESCE(SCHEMA_NAME,'-'), ROUND(SUM_TIMER_WAIT/1000000000000,1), COUNT_STAR, ROUND(SUM_TIMER_WAIT/COUNT_STAR/1000000000,1), DATE_FORMAT(LAST_SEEN,'%Y-%m-%d %H:%i:%s'), LEFT(REPLACE(REPLACE(DIGEST_TEXT,'\\n',' '),'\\t',' '),90) FROM performance_schema.events_statements_summary_by_digest WHERE SCHEMA_NAME IS NOT NULL AND DIGEST_TEXT IS NOT NULL ORDER BY SUM_TIMER_WAIT DESC LIMIT 12" 2>/dev/null
 
 # Tráfico de sitios que corren DENTRO de contenedores Docker. Va AL FINAL y
 # con tope de tiempo: si hay muchos contenedores con logs enormes, se corta
