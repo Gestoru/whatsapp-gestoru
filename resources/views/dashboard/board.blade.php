@@ -688,19 +688,30 @@ function startGeneration(){
     });
     es.addEventListener('listo', e => {
         const d = JSON.parse(e.data);
-        PM.raw = d.plan || PM.raw; renderPlan(PM.raw);
+        PM.raw = (d.plan && d.plan.trim()) ? d.plan : PM.raw;
+        PM.streaming = false; es.close(); PM.es = null;
+        if(!PM.raw || !PM.raw.trim()){   // salvaguarda: terminó sin texto
+            showError('La IA no devolvió ningún texto. Reintenta o cambia la conexión de IA.');
+            show('pm-generate', true); setPhase('generando','');
+            return;
+        }
+        renderPlan(PM.raw);
         setPhase('generando','done'); setPhase('listo','done');
-        es.close(); PM.es = null; PM.streaming = false;
         show('pm-check', true); show('pm-chat', true);
         show('pm-regenerate', true);
         if(PM.state.github_configured) show('pm-publish', true);
         $id('pm-check').scrollIntoView({behavior:'smooth', block:'center'});
     });
     es.addEventListener('error', e => {
-        let msg = 'Se perdió la conexión durante la generación. Reintenta.';
-        try{ if(e.data) msg = JSON.parse(e.data).m; }catch(_){}
-        if(PM.streaming){ showError(msg); show('pm-generate', true); }
-        if(PM.es){ PM.es.close(); PM.es = null; } PM.streaming = false;
+        if(!PM.streaming) return;   // ya terminó (cierre normal tras éxito o error ya mostrado)
+        let msg = null;
+        try{ if(e && e.data) msg = JSON.parse(e.data).m; }catch(_){}
+        PM.streaming = false;
+        if(PM.es){ PM.es.close(); PM.es = null; }   // cerrar evita que EventSource reconecte y regenere
+        show('pm-check', false);
+        showError(msg || 'Se interrumpió la generación (se perdió la conexión con el servidor). Reintenta.');
+        setPhase('generando','');
+        show('pm-generate', true);
     });
 }
 

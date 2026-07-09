@@ -138,17 +138,12 @@ class PlanController extends Controller
         abort_unless($issue->kind === 'mysql_query', 422, 'La planeación con IA aplica a consultas MySQL.');
 
         return response()->stream(function () use ($issue) {
-            @set_time_limit(0);
-            $emit = function (string $event, mixed $data): void {
-                echo 'event: '.$event."\n";
-                echo 'data: '.json_encode(is_array($data) ? $data : ['m' => $data], JSON_UNESCAPED_UNICODE)."\n\n";
-                @ob_flush();
-                flush();
-            };
+            $emit = $this->sseEmitter();
+            $plan = null;
 
             try {
                 if (! $this->planner->configured()) {
-                    $emit('error', 'Falta la clave de la API de Anthropic. Guárdala en el modal y reintenta.');
+                    $emit('error', 'La IA no está conectada. Elige «🔑 Clave de API» o «👤 Cuenta de Claude» y reintenta.');
 
                     return;
                 }
@@ -182,22 +177,72 @@ class PlanController extends Controller
                 $plan->update(['status' => 'generando']);
                 $texto = $this->planner->streamPlan($issue, $repo, $inv, fn ($ev, $m) => $emit($ev, $m));
 
+                // Sin texto: la IA no devolvió nada (credenciales rechazadas, límite
+                // de tokens, etc.). Lo tratamos como error para no dejar un plan vacío.
+                if (trim((string) $texto) === '') {
+                    $plan->update(['status' => 'error', 'error' => 'La IA no devolvió texto.']);
+                    $issue->logEvent('plan_error', 'La IA no devolvió texto');
+                    $emit('error', 'La IA no devolvió ningún texto.'.$this->aiHint());
+
+                    return;
+                }
+
                 $plan->update(['status' => 'listo', 'plan' => $texto, 'generated_at' => now()]);
                 $issue->logEvent('plan_listo', 'La IA terminó el plan de optimización ('.count($inv['files']).' archivos investigados)');
 
                 $emit('listo', ['plan' => $texto]);
             } catch (\Throwable $e) {
-                if (isset($plan) && $plan->exists) {
+                report($e);
+                if ($plan instanceof PerfPlan && $plan->exists) {
                     $plan->update(['status' => 'error', 'error' => $e->getMessage()]);
                 }
                 $issue->logEvent('plan_error', 'Falló la generación del plan: '.\Illuminate\Support\Str::limit($e->getMessage(), 160));
-                $emit('error', $e->getMessage());
+                $emit('error', $e->getMessage().$this->aiHint());
             }
-        }, 200, [
+        }, 200, $this->sseHeaders());
+    }
+
+    /** Cabeceras para Server-Sent Events (sin buffering en nginx). */
+    private function sseHeaders(): array
+    {
+        return [
             'Content-Type'      => 'text/event-stream; charset=utf-8',
-            'Cache-Control'     => 'no-cache',
+            'Cache-Control'     => 'no-cache, no-transform',
+            'Connection'        => 'keep-alive',
             'X-Accel-Buffering' => 'no',   // nginx: no bufferizar, queremos verlo en vivo
-        ]);
+        ];
+    }
+
+    /**
+     * Devuelve una función emit($evento, $datos) que manda un evento SSE y lo
+     * vacía de inmediato. Antes desactiva cualquier buffer para que el texto
+     * llegue en vivo y no todo al final.
+     */
+    private function sseEmitter(): callable
+    {
+        @set_time_limit(0);
+        @ini_set('zlib.output_compression', '0');
+        @ini_set('output_buffering', '0');
+        @ini_set('implicit_flush', '1');
+        while (ob_get_level() > 0) {
+            @ob_end_flush();
+        }
+        echo ': conectado'."\n\n";   // comentario inicial: abre el flujo enseguida
+        flush();
+
+        return function (string $event, mixed $data): void {
+            echo 'event: '.$event."\n";
+            echo 'data: '.json_encode(is_array($data) ? $data : ['m' => $data], JSON_UNESCAPED_UNICODE)."\n\n";
+            flush();
+        };
+    }
+
+    /** Pista extra en los errores según el modo de conexión de IA. */
+    private function aiHint(): string
+    {
+        return $this->planner->authMode() === 'oauth'
+            ? ' Estás usando «Cuenta de Claude»: las cuentas de suscripción a veces no permiten este uso desde aplicaciones externas. Prueba con «🔑 Clave de API» (enlace «cambiar» arriba).'
+            : '';
     }
 
     /** Chat con la IA para leer/ajustar el plan (respuesta transmitida en vivo). */
@@ -211,13 +256,7 @@ class PlanController extends Controller
         abort_unless($plan && $plan->status === 'listo', 422, 'Primero genera el plan.');
 
         return response()->stream(function () use ($plan, $issue, $message) {
-            @set_time_limit(0);
-            $emit = function (string $event, mixed $data): void {
-                echo 'event: '.$event."\n";
-                echo 'data: '.json_encode(is_array($data) ? $data : ['m' => $data], JSON_UNESCAPED_UNICODE)."\n\n";
-                @ob_flush();
-                flush();
-            };
+            $emit = $this->sseEmitter();
 
             try {
                 $plan->pushChat('user', $message);
@@ -231,13 +270,10 @@ class PlanController extends Controller
 
                 $emit('listo', ['reply' => $out['reply'], 'plan_actualizado' => $out['plan'] !== null, 'plan' => $out['plan']]);
             } catch (\Throwable $e) {
-                $emit('error', $e->getMessage());
+                report($e);
+                $emit('error', $e->getMessage().$this->aiHint());
             }
-        }, 200, [
-            'Content-Type'      => 'text/event-stream; charset=utf-8',
-            'Cache-Control'     => 'no-cache',
-            'X-Accel-Buffering' => 'no',
-        ]);
+        }, 200, $this->sseHeaders());
     }
 
     /** Publica el plan en GitHub: rama nueva + archivo Markdown + pull request. */
