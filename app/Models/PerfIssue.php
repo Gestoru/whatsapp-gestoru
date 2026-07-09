@@ -4,13 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PerfIssue extends Model
 {
     protected $fillable = [
         'server_id', 'kind', 'signature', 'title', 'summary', 'ai_cause', 'ai_prompt',
-        'severity', 'status', 'status_manual', 'metrics', 'occurrences', 'score', 'link',
-        'first_detected_at', 'last_seen_at', 'resolved_at',
+        'severity', 'status', 'status_manual', 'metrics', 'occurrences', 'reopened_count',
+        'score', 'link', 'first_detected_at', 'last_seen_at', 'resolved_at',
     ];
 
     protected function casts(): array
@@ -36,5 +37,20 @@ class PerfIssue extends Model
     public function server(): BelongsTo
     {
         return $this->belongsTo(Server::class);
+    }
+
+    public function events(): HasMany
+    {
+        return $this->hasMany(PerfIssueEvent::class)->orderByDesc('happened_at');
+    }
+
+    /** Registra un evento en la trazabilidad de esta incidencia. */
+    public function logEvent(string $type, ?string $note = null): void
+    {
+        $this->events()->create([
+            'type'        => $type,
+            'note'        => $note,
+            'happened_at' => now(),
+        ]);
     }
 }

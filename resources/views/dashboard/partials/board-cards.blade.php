@@ -44,6 +44,17 @@
                                 </h4>
                                 <div class="tiny muted">{{ $issue->summary }}</div>
 
+                                @if($issue->reopened_count > 0)
+                                    <div style="margin-top:6px"><span class="tag" style="background:#ff4d6d22;color:#ff4d6d;font-size:10.5px" title="Ya se había resuelto y volvió a aparecer">🔁 Reincidente ×{{ $issue->reopened_count }} · ya se había resuelto y volvió</span></div>
+                                @endif
+
+                                <div class="tiny muted" style="margin-top:6px;line-height:1.6">
+                                    🕓 Detectada: <b>{{ optional($issue->first_detected_at)->format('d/m/Y H:i') ?? '—' }}</b><br>
+                                    Vista por última vez: <b>{{ optional($issue->last_seen_at)->format('d/m/Y H:i') ?? '—' }}</b>
+                                    @if($issue->kind === 'mysql_query' && !empty($m['last_seen']))<br>Última ejecución en MySQL: <b>{{ $m['last_seen'] }}</b>@endif
+                                    <span style="opacity:.6">🇨🇴</span>
+                                </div>
+
                                 <div class="kmetrics">
                                     @if($issue->kind === 'cpu_peak')
                                         <span class="kchip">máx {{ $m['max_cpu'] ?? '?' }}% CPU</span>
@@ -63,6 +74,20 @@
                                 @endif
 
                                 <div class="cause">🩺 <b>Causa probable:</b> {{ $issue->ai_cause }}</div>
+
+                                @if($issue->events->isNotEmpty())
+                                    <details style="margin-top:6px">
+                                        <summary style="cursor:pointer;font-size:11.5px;color:#7dd3fc;list-style:none">🕓 Historial ({{ $issue->events->count() }})</summary>
+                                        <div style="margin-top:6px;border-left:2px solid var(--line);padding-left:9px">
+                                            @foreach($issue->events as $ev)
+                                                <div class="tiny muted" style="margin:3px 0;line-height:1.5">
+                                                    {{ $ev->icon() }} {{ $ev->note }}
+                                                    <span style="opacity:.6">· {{ $ev->happened_at->format('d/m/Y H:i') }}</span>
+                                                </div>
+                                            @endforeach
+                                        </div>
+                                    </details>
+                                @endif
 
                                 <div class="kacts">
                                     @foreach($actions[$issue->status] ?? [] as [$st,$al])

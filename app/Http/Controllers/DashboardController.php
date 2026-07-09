@@ -441,11 +441,17 @@ class DashboardController extends Controller
         $status = $request->input('status');
         abort_unless(array_key_exists($status, \App\Models\PerfIssue::COLUMNS), 422);
 
+        $from = \App\Models\PerfIssue::COLUMNS[$issue->status][1] ?? $issue->status;
+        $to   = \App\Models\PerfIssue::COLUMNS[$status][1] ?? $status;
+
         $issue->update([
             'status'        => $status,
             'status_manual' => true,
             'resolved_at'   => in_array($status, ['resuelta', 'aceptada'], true) ? now() : null,
         ]);
+        if ($status !== $issue->getOriginal('status')) {
+            $issue->logEvent('movida', "Movida de «{$from}» a «{$to}»");
+        }
 
         return response()->json(['ok' => true, 'status' => $status]);
     }

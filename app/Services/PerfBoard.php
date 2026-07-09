@@ -51,10 +51,12 @@ class PerfBoard
             ->each(function (PerfIssue $issue) use ($seen) {
                 if (! isset($seen["{$issue->kind}|{$issue->signature}"])) {
                     $issue->update(['status' => 'resuelta', 'resolved_at' => now()]);
+                    $issue->logEvent('resuelta_auto', 'Dejó de aparecer, se marcó resuelta automáticamente');
                 }
             });
 
         $issues = PerfIssue::where('server_id', $server->id)
+            ->with(['events' => fn ($q) => $q->limit(12)])
             ->orderByDesc('score')
             ->get();
 
@@ -71,7 +73,8 @@ class PerfBoard
     {
         $issue = PerfIssue::firstOrNew(['server_id' => $server->id, 'kind' => $kind, 'signature' => $signature]);
 
-        $isNew = ! $issue->exists;
+        $isNew   = ! $issue->exists;
+        $reopened = false;
         if ($isNew) {
             $issue->status = 'por_revisar';
             $issue->first_detected_at = now();
@@ -79,6 +82,8 @@ class PerfBoard
             // Reapareció una que se había resuelto sola → reabrir para revisar.
             $issue->status = 'por_revisar';
             $issue->resolved_at = null;
+            $issue->reopened_count = (int) $issue->reopened_count + 1;
+            $reopened = true;
         }
         // Si está en "aceptada" (no aplica) o el usuario la movió a mano, se
         // conserva su columna; solo se refrescan los datos.
@@ -96,6 +101,12 @@ class PerfBoard
             'last_seen_at' => now(),
         ]);
         $issue->save();
+
+        if ($isNew) {
+            $issue->logEvent('detectada', 'Detectada por primera vez');
+        } elseif ($reopened) {
+            $issue->logEvent('reaparecio', 'Volvió a aparecer después de haberse resuelto (reincidencia #'.$issue->reopened_count.')');
+        }
     }
 
     // ── Detección de picos de CPU (desde el histórico guardado) ──────────────
