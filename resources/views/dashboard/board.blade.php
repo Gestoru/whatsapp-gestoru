@@ -83,6 +83,27 @@
     .pm-setup label{display:block;font-size:11.5px;color:var(--muted);margin:8px 0 4px}
     .pm-setup input,.pm-setup select{width:100%;background:#0a1024;border:1px solid var(--line);border-radius:9px;
         color:var(--text);padding:8px 11px;font-size:12.5px}
+    /* Selector de modo de conexión de IA */
+    .pm-modes{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:9px 0 4px}
+    .pm-mode{display:flex;align-items:center;gap:10px;text-align:left;background:#0a1024;border:1px solid var(--line);
+        border-radius:11px;padding:11px 13px;cursor:pointer;color:var(--text);font-family:inherit;transition:border-color .15s}
+    .pm-mode:hover{border-color:#c084fc66}
+    .pm-mode.on{border-color:#c084fc;background:#c084fc12;box-shadow:0 0 0 1px #c084fc55 inset}
+    .pm-mode-ic{font-size:20px;flex:none}
+    .pm-mode-tx{display:flex;flex-direction:column;gap:1px;min-width:0}
+    .pm-mode-tx b{font-size:12.5px}
+    @media(max-width:560px){.pm-modes{grid-template-columns:1fr}}
+    /* Buscador de repositorios (combobox) */
+    .pm-combo{position:relative}
+    .pm-combo-list{margin-top:6px;max-height:190px;overflow-y:auto;border:1px solid var(--line);border-radius:9px;
+        background:#0a1024}
+    .pm-combo-item{padding:8px 12px;font-size:12.5px;cursor:pointer;border-bottom:1px solid #ffffff08;
+        display:flex;align-items:center;gap:8px}
+    .pm-combo-item:last-child{border-bottom:none}
+    .pm-combo-item:hover{background:#c084fc14}
+    .pm-combo-item.on{background:#c084fc22;color:#e9d5ff}
+    .pm-combo-item .lang{margin-left:auto;font-size:10.5px;color:var(--muted2)}
+    .pm-combo-empty{padding:12px;font-size:12px;color:var(--muted2);text-align:center}
     .pm-err{background:#ff4d6d14;border:1px solid #ff4d6d44;color:#fca5a5;border-radius:10px;padding:10px 14px;
         font-size:12.5px;margin:10px 0;line-height:1.6}
     .pm-spin{display:inline-block;width:12px;height:12px;border:2px solid #c084fc44;border-top-color:#c084fc;
@@ -112,26 +133,73 @@
                 <button type="button" class="pm-close" id="pm-close">✕ Cerrar</button>
             </div>
             <div class="pm-body">
-                {{-- Configuración previa: clave de IA y mapeo del repositorio --}}
+                {{-- Configuración previa: conexión de IA y mapeo del repositorio --}}
                 <div id="pm-setup" class="pm-setup" hidden>
-                    <div id="pm-setup-key" hidden>
-                        <div class="tiny" style="font-weight:600">🔑 Conectar la IA (una sola vez)</div>
-                        <label>Clave de la API de Anthropic (se guarda cifrada en el panel)</label>
-                        <div style="display:flex;gap:8px">
-                            <input type="password" id="pm-key" placeholder="sk-ant-…" autocomplete="off">
-                            <button class="btn btn-sm" id="pm-key-save">Guardar</button>
+                    {{-- Conexión con la IA: dos modos --}}
+                    <div id="pm-setup-ai" hidden>
+                        <div class="tiny" style="font-weight:600">🤖 Conectar la IA <span class="muted" style="font-weight:400">— elige cómo</span></div>
+                        <div class="pm-modes">
+                            <button type="button" class="pm-mode" data-mode="api_key">
+                                <span class="pm-mode-ic">🔑</span>
+                                <span class="pm-mode-tx"><b>Clave de API</b><span class="tiny muted">Pagas por uso a la API de Anthropic</span></span>
+                            </button>
+                            <button type="button" class="pm-mode" data-mode="oauth">
+                                <span class="pm-mode-ic">👤</span>
+                                <span class="pm-mode-tx"><b>Cuenta de Claude</b><span class="tiny muted">Suscripción Pro, Max, Team o Enterprise</span></span>
+                            </button>
+                        </div>
+
+                        {{-- Panel: clave de API --}}
+                        <div id="pm-pane-key" hidden>
+                            <label>Clave de la API de Anthropic (se guarda cifrada en el panel)</label>
+                            <div style="display:flex;gap:8px">
+                                <input type="password" id="pm-key" placeholder="sk-ant-…" autocomplete="off">
+                                <button class="btn btn-sm" id="pm-key-save">Guardar</button>
+                            </div>
+                        </div>
+
+                        {{-- Panel: cuenta de Claude (OAuth, como Claude Code) --}}
+                        <div id="pm-pane-oauth" hidden>
+                            <div id="pm-oauth-connected" hidden>
+                                <div class="pm-check" style="margin:8px 0">
+                                    <span class="big-check">✓</span>
+                                    <span>Conectado con tu cuenta de Claude <b id="pm-oauth-acct" class="tiny" style="color:#22e39b"></b></span>
+                                </div>
+                                <button class="btn btn-ghost btn-sm" id="pm-oauth-disconnect">Desconectar cuenta</button>
+                            </div>
+                            <div id="pm-oauth-connect">
+                                <label>Conecta tu cuenta con suscripción (igual que Claude Code). Se abrirá la página de Claude para autorizar; luego copia el código que te muestran y pégalo aquí.</label>
+                                <button class="btn btn-sm" id="pm-oauth-open" style="margin:2px 0">🔗 Abrir autorización de Claude</button>
+                                <div id="pm-oauth-step2" hidden style="margin-top:8px">
+                                    <label>Pega el código que te mostró Claude:</label>
+                                    <div style="display:flex;gap:8px">
+                                        <input type="text" id="pm-oauth-code" placeholder="código#estado" autocomplete="off">
+                                        <button class="btn btn-sm" id="pm-oauth-save">Conectar</button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <div id="pm-setup-repo" hidden>
+
+                    {{-- Mapeo del repositorio, con buscador --}}
+                    <div id="pm-setup-repo" hidden style="margin-top:12px">
                         <div class="tiny" style="font-weight:600">🔗 ¿A qué proyecto pertenece esta consulta?</div>
                         <label>La base de datos <b id="pm-db" style="color:#c084fc">—</b> se mapeará a este repositorio de GitHub (se recuerda para las próximas consultas de la misma base):</label>
-                        <div style="display:flex;gap:8px">
-                            <select id="pm-repo"></select>
-                            <button class="btn btn-sm" id="pm-repo-save">Guardar mapeo</button>
+                        <div class="pm-combo">
+                            <input type="text" id="pm-repo-search" placeholder="🔎 Busca tu proyecto por nombre…" autocomplete="off">
+                            <div class="pm-combo-list" id="pm-repo-list"></div>
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+                            <span class="tiny" id="pm-repo-chosen" style="color:#c084fc"></span>
+                            <span style="flex:1"></span>
+                            <button class="btn btn-sm" id="pm-repo-save" disabled>Guardar mapeo</button>
                         </div>
                         <div class="tiny muted" id="pm-repo-hint" style="margin-top:6px"></div>
                     </div>
                 </div>
+
+                {{-- Estado de conexión de IA cuando ya está lista (con opción de cambiar) --}}
+                <div id="pm-ai-status" class="tiny muted" hidden style="margin-bottom:10px"></div>
 
                 {{-- Fases del proceso --}}
                 <div class="pm-phases" id="pm-phases" hidden>
@@ -290,9 +358,17 @@ loadBoard();
 // plan generado en vivo → chulito verde → chat de ajustes → subir a GitHub.
 // ════════════════════════════════════════════════════════════════════════════
 const $id = s => document.getElementById(s);
-const PM = { issueId:null, state:null, es:null, raw:'', streaming:false };
+const PM = { issueId:null, state:null, es:null, raw:'', streaming:false,
+    aiMode:'api_key', forceAiSetup:false, selectedRepo:null };
 const planUrl = (id, sfx) => boardBody.dataset.move + '/' + id + '/plan' + (sfx || '');
-const AI_KEY_URL = @json(route('dashboard.ai.key'));
+const AI_URLS = {
+    key:        @json(route('dashboard.ai.key')),
+    mode:       @json(route('dashboard.ai.mode')),
+    start:      @json(route('dashboard.ai.oauth.start')),
+    finish:     @json(route('dashboard.ai.oauth.finish')),
+    disconnect: @json(route('dashboard.ai.oauth.disconnect')),
+};
+const jhead = {'X-CSRF-TOKEN':CSRF,'Content-Type':'application/json',Accept:'application/json'};
 
 document.addEventListener('click', e => {
     const btn = e.target.closest('[data-plan]');
@@ -310,12 +386,12 @@ function setPhase(name, cls){
 }
 
 function resetModal(){
-    ['pm-setup','pm-setup-key','pm-setup-repo','pm-phases','pm-log','pm-think','pm-error',
+    ['pm-setup','pm-setup-ai','pm-ai-status','pm-setup-repo','pm-phases','pm-log','pm-think','pm-error',
      'pm-check','pm-plan','pm-chat','pm-generate','pm-regenerate','pm-publish','pm-pushed'].forEach(i => show(i, false));
     $id('pm-log').innerHTML = ''; $id('pm-think-body').textContent = '';
     $id('pm-plan').innerHTML = ''; $id('pm-msgs').innerHTML = '';
     document.querySelectorAll('.pm-phase').forEach(p => p.classList.remove('on','done'));
-    PM.raw = ''; PM.streaming = false;
+    PM.raw = ''; PM.streaming = false; PM.forceAiSetup = false; PM.selectedRepo = null;
 }
 
 function closePlan(){
@@ -340,18 +416,30 @@ async function openPlan(issueId){
 function renderState(){
     const s = PM.state;
     $id('pm-db').textContent = s.db || '—';
-    let pendiente = false;
+    PM.aiMode = s.ai_mode || 'api_key';
 
-    if(!s.ai_configured){ show('pm-setup-key', true); pendiente = true; }
-    if(!s.repo){
-        const sel = $id('pm-repo');
-        sel.innerHTML = (s.repos || []).map(r =>
-            '<option value="'+r.id+'">'+r.full_name+(r.language ? ' · '+r.language : '')+'</option>').join('');
-        $id('pm-repo-hint').textContent = (s.repos || []).length
-            ? '' : 'No hay repositorios sincronizados. Ve al módulo Repositorios, conecta GitHub y sincroniza; luego vuelve aquí.';
-        show('pm-setup-repo', true); pendiente = true;
+    const aiOk = s.ai_configured, repoOk = !!s.repo;
+    const showAi = !aiOk || PM.forceAiSetup;
+    const pendiente = !aiOk || !repoOk;
+
+    // Conexión de IA: selector de modo (o resumen si ya está lista)
+    show('pm-setup-ai', showAi);
+    if(showAi) renderAiModes();
+    show('pm-ai-status', aiOk && !PM.forceAiSetup);
+    if(aiOk && !PM.forceAiSetup){
+        const label = PM.aiMode === 'oauth'
+            ? '👤 Cuenta de Claude' + (s.oauth_account ? ' · ' + s.oauth_account : '')
+            : '🔑 Clave de API';
+        $id('pm-ai-status').innerHTML = 'Conexión de IA: <b>' + label + '</b> · '
+            + '<a href="#" id="pm-ai-change" style="color:#c084fc">cambiar</a>';
+        $id('pm-ai-change').onclick = ev => { ev.preventDefault(); PM.forceAiSetup = true; renderState(); };
     }
-    show('pm-setup', pendiente);
+
+    // Mapeo del repositorio (con buscador)
+    show('pm-setup-repo', !repoOk);
+    if(!repoOk) renderRepoCombo();
+
+    show('pm-setup', showAi || !repoOk);
 
     const p = s.plan;
     if(p && p.status === 'listo' && p.plan){
@@ -372,23 +460,105 @@ function renderState(){
     }
 }
 
-// ── Guardar clave de IA y mapeo del repositorio ──────────────────────────────
+// ── Conexión de IA: selector de modo (clave de API / cuenta de Claude) ───────
+function renderAiModes(){
+    const s = PM.state;
+    document.querySelectorAll('.pm-mode').forEach(b => b.classList.toggle('on', b.dataset.mode === PM.aiMode));
+    show('pm-pane-key', PM.aiMode === 'api_key');
+    show('pm-pane-oauth', PM.aiMode === 'oauth');
+    if(PM.aiMode === 'oauth'){
+        show('pm-oauth-connected', !!s.oauth_connected);
+        show('pm-oauth-connect', !s.oauth_connected);
+        show('pm-oauth-step2', false);
+        if(s.oauth_connected) $id('pm-oauth-acct').textContent = s.oauth_account || '';
+    }
+}
+
+document.querySelectorAll('.pm-mode').forEach(b => b.addEventListener('click', async () => {
+    const mode = b.dataset.mode;
+    PM.aiMode = mode;
+    renderAiModes();
+    // Si el modo elegido ya está aprovisionado, se activa directo.
+    const listo = (mode === 'oauth' && PM.state.oauth_connected) || (mode === 'api_key' && PM.state.has_api_key);
+    if(listo){
+        await fetch(AI_URLS.mode, {method:'POST', headers:jhead, body: JSON.stringify({mode})});
+        PM.forceAiSetup = false; openPlan(PM.issueId);
+    }
+}));
+
 $id('pm-key-save').addEventListener('click', async () => {
     const key = $id('pm-key').value.trim();
     if(!key) return;
-    const r = await fetch(AI_KEY_URL, {method:'POST',
-        headers:{'X-CSRF-TOKEN':CSRF,'Content-Type':'application/json',Accept:'application/json'},
-        body: JSON.stringify({api_key:key})});
-    if(r.ok){ $id('pm-key').value=''; openPlan(PM.issueId); }
+    const r = await fetch(AI_URLS.key, {method:'POST', headers:jhead, body: JSON.stringify({api_key:key})});
+    if(r.ok){ $id('pm-key').value=''; PM.forceAiSetup = false; openPlan(PM.issueId); }
     else showError('No se pudo guardar la clave.');
 });
 
+// ── Cuenta de Claude (OAuth, como Claude Code) ───────────────────────────────
+$id('pm-oauth-open').addEventListener('click', async () => {
+    const btn = $id('pm-oauth-open'); btn.disabled = true;
+    try{
+        const r = await fetch(AI_URLS.start, {method:'POST', headers:jhead});
+        const d = await r.json();
+        if(d.ok && d.url){ window.open(d.url, '_blank', 'noopener'); show('pm-oauth-step2', true); $id('pm-oauth-code').focus(); }
+        else showError('No se pudo iniciar la conexión con Claude.');
+    }catch(e){ showError('No se pudo iniciar la conexión (' + e.message + ').'); }
+    btn.disabled = false;
+});
+
+$id('pm-oauth-save').addEventListener('click', async () => {
+    const code = $id('pm-oauth-code').value.trim();
+    if(!code) return;
+    const btn = $id('pm-oauth-save'); btn.disabled = true; btn.innerHTML = '<span class="pm-spin"></span>';
+    try{
+        const r = await fetch(AI_URLS.finish, {method:'POST', headers:jhead, body: JSON.stringify({code})});
+        const d = await r.json();
+        if(d.ok){ $id('pm-oauth-code').value=''; PM.forceAiSetup = false; openPlan(PM.issueId); }
+        else showError(d.error || 'No se pudo conectar la cuenta.');
+    }catch(e){ showError('No se pudo conectar (' + e.message + ').'); }
+    btn.disabled = false; btn.textContent = 'Conectar';
+});
+
+$id('pm-oauth-disconnect').addEventListener('click', async () => {
+    await fetch(AI_URLS.disconnect, {method:'POST', headers:jhead});
+    openPlan(PM.issueId);
+});
+
+// ── Buscador de repositorios (combobox) ──────────────────────────────────────
+function renderRepoCombo(){
+    PM.selectedRepo = null;
+    $id('pm-repo-search').value = '';
+    $id('pm-repo-chosen').textContent = '';
+    $id('pm-repo-save').disabled = true;
+    const repos = PM.state.repos || [];
+    $id('pm-repo-hint').textContent = repos.length ? ''
+        : 'No hay repositorios sincronizados. Ve al módulo Repositorios, conecta GitHub y sincroniza; luego vuelve aquí.';
+    filterRepos('');
+}
+function filterRepos(q){
+    const repos = PM.state.repos || [];
+    q = (q || '').toLowerCase().trim();
+    const matches = repos.filter(r => r.full_name.toLowerCase().includes(q)).slice(0, 50);
+    const list = $id('pm-repo-list');
+    if(!matches.length){ list.innerHTML = '<div class="pm-combo-empty">Sin coincidencias</div>'; return; }
+    list.innerHTML = matches.map(r =>
+        '<div class="pm-combo-item' + (PM.selectedRepo === r.id ? ' on' : '') + '" data-id="' + r.id + '">'
+        + '<span>' + r.full_name.replace(/</g,'&lt;') + '</span>'
+        + (r.language ? '<span class="lang">' + r.language + '</span>' : '') + '</div>').join('');
+    list.querySelectorAll('.pm-combo-item').forEach(it => it.addEventListener('click', () => {
+        PM.selectedRepo = parseInt(it.dataset.id, 10);
+        const repo = repos.find(r => r.id === PM.selectedRepo);
+        $id('pm-repo-chosen').textContent = repo ? '✓ ' + repo.full_name : '';
+        $id('pm-repo-save').disabled = false;
+        list.querySelectorAll('.pm-combo-item').forEach(x => x.classList.toggle('on', x === it));
+    }));
+}
+$id('pm-repo-search').addEventListener('input', e => filterRepos(e.target.value));
+
 $id('pm-repo-save').addEventListener('click', async () => {
-    const id = $id('pm-repo').value;
-    if(!id) return;
-    const r = await fetch(planUrl(PM.issueId, '/repo'), {method:'POST',
-        headers:{'X-CSRF-TOKEN':CSRF,'Content-Type':'application/json',Accept:'application/json'},
-        body: JSON.stringify({repository_id:id})});
+    if(!PM.selectedRepo) return;
+    const r = await fetch(planUrl(PM.issueId, '/repo'), {method:'POST', headers:jhead,
+        body: JSON.stringify({repository_id: PM.selectedRepo})});
     if(r.ok) openPlan(PM.issueId);
     else showError('No se pudo guardar el mapeo.');
 });

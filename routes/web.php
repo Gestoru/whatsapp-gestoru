@@ -51,7 +51,13 @@ Route::middleware('dashboard.auth')->prefix('panel')->name('dashboard.')->group(
     Route::get('/servidores/{server}/tablero/{issue}/plan/stream', [PlanController::class, 'stream'])->name('servers.plan.stream');
     Route::post('/servidores/{server}/tablero/{issue}/plan/chat', [PlanController::class, 'chat'])->name('servers.plan.chat');
     Route::post('/servidores/{server}/tablero/{issue}/plan/publicar', [PlanController::class, 'publish'])->name('servers.plan.publish');
+
+    // Conexión con la IA (clave de API o cuenta de Claude por OAuth)
     Route::post('/ia/clave', [PlanController::class, 'saveAiKey'])->name('ai.key');
+    Route::post('/ia/modo', [PlanController::class, 'setAiMode'])->name('ai.mode');
+    Route::post('/ia/cuenta/iniciar', [PlanController::class, 'oauthStart'])->name('ai.oauth.start');
+    Route::post('/ia/cuenta/conectar', [PlanController::class, 'oauthFinish'])->name('ai.oauth.finish');
+    Route::post('/ia/cuenta/desconectar', [PlanController::class, 'oauthDisconnect'])->name('ai.oauth.disconnect');
     Route::get('/servidores/{server}/estres', [StressController::class, 'form'])->name('servers.stress');
     Route::post('/servidores/{server}/estres', [StressController::class, 'run'])->name('servers.stress.run');
 

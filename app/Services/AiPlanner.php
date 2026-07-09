@@ -26,6 +26,7 @@ class AiPlanner
 {
     public const KEY_SETTING   = 'anthropic_api_key';
     public const MODEL_SETTING = 'anthropic_model';
+    public const MODE_SETTING  = 'ai_auth_mode';   // api_key | oauth
 
     /** Máximo de archivos del repo que se incluyen en el contexto de la IA. */
     private const MAX_FILES = 8;
@@ -33,13 +34,37 @@ class AiPlanner
     /** Máximo de caracteres por archivo (para no desbordar el contexto). */
     private const MAX_FILE_CHARS = 7000;
 
-    public function __construct(private GitHubService $github) {}
+    public function __construct(
+        private GitHubService $github,
+        private ClaudeOAuth $oauth,
+    ) {}
 
     // ── Credenciales ─────────────────────────────────────────────────────────
 
+    /** Modo de conexión con la IA: «api_key» o «oauth» (cuenta de Claude). */
+    public function authMode(): string
+    {
+        $mode = Setting::get(self::MODE_SETTING);
+        if (in_array($mode, ['api_key', 'oauth'], true)) {
+            return $mode;
+        }
+
+        // Sin elección explícita: si hay cuenta conectada úsala; si no, API key.
+        return $this->oauth->connected() ? 'oauth' : 'api_key';
+    }
+
+    public static function saveMode(string $mode): void
+    {
+        if (in_array($mode, ['api_key', 'oauth'], true)) {
+            Setting::put(self::MODE_SETTING, $mode);
+        }
+    }
+
     public function configured(): bool
     {
-        return $this->apiKey() !== null;
+        return $this->authMode() === 'oauth'
+            ? $this->oauth->connected()
+            : $this->apiKey() !== null;
     }
 
     public static function saveKey(?string $key): void
@@ -47,6 +72,11 @@ class AiPlanner
         if (! empty($key)) {
             Setting::put(self::KEY_SETTING, Crypt::encryptString(trim($key)));
         }
+    }
+
+    public function hasApiKey(): bool
+    {
+        return $this->apiKey() !== null;
     }
 
     private function apiKey(): ?string
@@ -66,7 +96,32 @@ class AiPlanner
 
     private function client(): Client
     {
+        // Cuenta de Claude (suscripción): el SDK maneja el Bearer, el header
+        // beta de OAuth y la renovación del token por su cuenta.
+        if ($this->authMode() === 'oauth') {
+            return new Client(credentials: $this->oauth->credential());
+        }
+
         return new Client(apiKey: $this->apiKey());
+    }
+
+    /**
+     * Envuelve el system prompt. Con la cuenta de Claude (OAuth), el primer
+     * bloque debe declarar la identidad de Claude Code, que es como opera el
+     * modo de inferencia por suscripción.
+     *
+     * @return string|array<int, array<string, string>>
+     */
+    private function wrapSystem(string $text): string|array
+    {
+        if ($this->authMode() === 'oauth') {
+            return [
+                ['type' => 'text', 'text' => "You are Claude Code, Anthropic's official CLI for Claude."],
+                ['type' => 'text', 'text' => $text],
+            ];
+        }
+
+        return $text;
     }
 
     // ── Mapeo consulta → repositorio (por base de datos) ─────────────────────
@@ -227,7 +282,7 @@ class AiPlanner
             maxTokens: 16000,
             messages: [['role' => 'user', 'content' => $this->planPrompt($issue, $repo, $inv)]],
             model: $this->model(),
-            system: $this->systemPrompt(),
+            system: $this->wrapSystem($this->systemPrompt()),
             thinking: ['type' => 'adaptive'],
             requestOptions: ['timeout' => 600],
         );
@@ -271,7 +326,7 @@ class AiPlanner
             maxTokens: 16000,
             messages: $history,
             model: $this->model(),
-            system: $this->systemPrompt()."\n\n".$context,
+            system: $this->wrapSystem($this->systemPrompt()."\n\n".$context),
             thinking: ['type' => 'adaptive'],
             requestOptions: ['timeout' => 600],
         );

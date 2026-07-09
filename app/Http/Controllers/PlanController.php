@@ -7,6 +7,7 @@ use App\Models\PerfPlan;
 use App\Models\Repository;
 use App\Models\Server;
 use App\Services\AiPlanner;
+use App\Services\ClaudeOAuth;
 use App\Services\GitHubService;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -25,6 +26,7 @@ class PlanController extends Controller
     public function __construct(
         private AiPlanner $planner,
         private GitHubService $github,
+        private ClaudeOAuth $oauth,
     ) {}
 
     /** Estado del plan (para abrir el modal): mapeo, credenciales y plan actual. */
@@ -40,6 +42,10 @@ class PlanController extends Controller
             'kind'              => $issue->kind,
             'db'                => $this->planner->dbOf($issue),
             'ai_configured'     => $this->planner->configured(),
+            'ai_mode'           => $this->planner->authMode(),
+            'has_api_key'       => $this->planner->hasApiKey(),
+            'oauth_connected'   => $this->oauth->connected(),
+            'oauth_account'     => $this->oauth->account(),
             'github_configured' => $this->github->configured(),
             'repo'              => $repo ? ['id' => $repo->id, 'full_name' => $repo->full_name] : null,
             'repos'             => Repository::where('archived', false)->orderBy('full_name')
@@ -71,11 +77,53 @@ class PlanController extends Controller
         return response()->json(['ok' => true, 'repo' => ['id' => $repo->id, 'full_name' => $repo->full_name]]);
     }
 
-    /** Guarda la clave de la API de Anthropic (cifrada). */
+    /** Guarda la clave de la API de Anthropic (cifrada) y activa ese modo. */
     public function saveAiKey(Request $request)
     {
         $request->validate(['api_key' => 'required|string|min:20']);
         AiPlanner::saveKey($request->input('api_key'));
+        AiPlanner::saveMode('api_key');
+
+        return response()->json(['ok' => true]);
+    }
+
+    /** Cambia el modo de conexión con la IA: «api_key» o «oauth». */
+    public function setAiMode(Request $request)
+    {
+        $mode = (string) $request->input('mode');
+        if ($mode === 'oauth' && ! $this->oauth->connected()) {
+            return response()->json(['ok' => false, 'error' => 'Primero conecta tu cuenta de Claude.'], 422);
+        }
+        AiPlanner::saveMode($mode);
+
+        return response()->json(['ok' => true, 'mode' => $this->planner->authMode()]);
+    }
+
+    /** Paso 1 del login por cuenta de Claude: entrega la URL de autorización. */
+    public function oauthStart()
+    {
+        return response()->json(['ok' => true, 'url' => $this->oauth->authorizeUrl()]);
+    }
+
+    /** Paso 2: canjea el código que pegó el usuario y activa el modo cuenta. */
+    public function oauthFinish(Request $request)
+    {
+        $request->validate(['code' => 'required|string|min:6']);
+        try {
+            $this->oauth->exchange($request->input('code'));
+            AiPlanner::saveMode('oauth');
+
+            return response()->json(['ok' => true, 'account' => $this->oauth->account()]);
+        } catch (\Throwable $e) {
+            return response()->json(['ok' => false, 'error' => $e->getMessage()], 422);
+        }
+    }
+
+    /** Desconecta la cuenta de Claude y vuelve al modo de clave de API. */
+    public function oauthDisconnect()
+    {
+        $this->oauth->disconnect();
+        AiPlanner::saveMode('api_key');
 
         return response()->json(['ok' => true]);
     }
