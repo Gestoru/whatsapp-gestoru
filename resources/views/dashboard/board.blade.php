@@ -109,8 +109,33 @@
     .pm-think{margin-bottom:12px}
     .pm-think pre{font-size:11px;color:#94a3c4;max-height:130px;overflow-y:auto;white-space:pre-wrap;
         background:#0a1024;border:1px solid var(--line);border-radius:10px;padding:10px 12px;line-height:1.6;margin:6px 0 0}
-    .pm-plan{background:#0a1024;border:1px solid var(--line);border-radius:12px;padding:16px 18px;font-size:13px;
-        line-height:1.75;overflow-x:auto}
+    /* Conexión activa (resumen en una línea) */
+    .pm-conn{font-size:12px;color:var(--muted);background:#0a1024;border:1px solid var(--line);border-radius:10px;
+        padding:8px 12px;margin-bottom:12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+    .pm-conn b{color:var(--text)}
+    /* Banner de estado: dice qué hacer ahora */
+    .pm-stage{display:flex;align-items:center;gap:11px;border-radius:12px;padding:12px 15px;margin-bottom:14px;
+        font-size:13px;line-height:1.5;border:1px solid var(--line)}
+    .pm-stage::before{font-size:17px;flex:none}
+    .pm-stage-info{background:#7dd3fc10;border-color:#7dd3fc33;color:#bae6fd}
+    .pm-stage-info::before{content:'ℹ️'}
+    .pm-stage-ready{background:#c084fc12;border-color:#c084fc44;color:#e9d5ff}
+    .pm-stage-ready::before{content:'✨'}
+    .pm-stage-working{background:#fbbf2410;border-color:#fbbf2433;color:#fde68a}
+    .pm-stage-working::before{content:''}
+    .pm-stage-ok{background:#22e39b14;border-color:#22e39b44;color:#22e39b;font-weight:600}
+    .pm-stage-ok::before{content:'✓';width:24px;height:24px;border-radius:50%;background:#22e39b;color:#04121c;
+        display:flex;align-items:center;justify-content:center;font-size:15px;animation:pmpop .45s cubic-bezier(.2,1.6,.4,1)}
+    .pm-stage-error{background:#ff4d6d14;border-color:#ff4d6d44;color:#fca5a5}
+    .pm-stage-error::before{content:'⚠️'}
+    .pm-stage .sp{width:15px;height:15px;border:2px solid #fbbf2455;border-top-color:#fbbf24;border-radius:50%;
+        animation:pmspin .8s linear infinite;flex:none}
+    @keyframes pmpop{0%{transform:scale(0)}100%{transform:scale(1)}}
+    /* Panel del plan, con encabezado claro */
+    .pm-plan-wrap{border:1px solid #c084fc33;border-radius:13px;overflow:hidden;margin-bottom:4px}
+    .pm-plan-head{background:#c084fc14;padding:9px 16px;font-size:12px;font-weight:700;color:#e9d5ff;
+        border-bottom:1px solid #c084fc22;letter-spacing:.02em}
+    .pm-plan{background:#0a1024;padding:16px 18px;font-size:13px;line-height:1.75;overflow-x:auto}
     .pm-plan h1,.pm-plan h2,.pm-plan h3{margin:14px 0 6px;font-size:14.5px;color:#e2e8ff}
     .pm-plan h1:first-child,.pm-plan h2:first-child{margin-top:0}
     .pm-plan pre{background:#060b1c;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:11.5px;
@@ -119,12 +144,8 @@
     .pm-plan pre code{background:none;padding:0}
     .pm-plan ul,.pm-plan ol{padding-left:20px;margin:6px 0}
     .pm-plan blockquote{border-left:3px solid #c084fc66;margin:8px 0;padding:2px 12px;color:var(--muted)}
-    .pm-check{display:flex;align-items:center;gap:10px;background:#22e39b14;border:1px solid #22e39b44;
-        border-radius:12px;padding:11px 15px;margin:12px 0;font-size:13px;font-weight:600;color:#22e39b}
-    .pm-check .big-check{width:26px;height:26px;border-radius:50%;background:#22e39b;color:#04121c;display:flex;
-        align-items:center;justify-content:center;font-size:15px;animation:pmpop .45s cubic-bezier(.2,1.6,.4,1)}
-    @keyframes pmpop{0%{transform:scale(0)}100%{transform:scale(1)}}
-    .pm-chat{border-top:1px solid var(--line);margin-top:14px;padding-top:12px}
+    .pm-chat{border-top:1px solid var(--line);margin-top:16px;padding-top:14px}
+    .pm-chat-head{font-size:12.5px;font-weight:600;margin-bottom:9px;color:var(--text)}
     .pm-msgs{display:flex;flex-direction:column;gap:8px;max-height:280px;overflow-y:auto;margin-bottom:10px}
     .pm-msg{border-radius:11px;padding:9px 13px;font-size:12.5px;line-height:1.65;max-width:85%;white-space:pre-wrap;word-break:break-word}
     .pm-msg.user{align-self:flex-end;background:#1d2a55;border:1px solid #31408066}
@@ -217,9 +238,8 @@
                         {{-- Panel: cuenta de Claude (OAuth, como Claude Code) --}}
                         <div id="pm-pane-oauth" hidden>
                             <div id="pm-oauth-connected" hidden>
-                                <div class="pm-check" style="margin:8px 0">
-                                    <span class="big-check">✓</span>
-                                    <span>Conectado con tu cuenta de Claude <b id="pm-oauth-acct" class="tiny" style="color:#22e39b"></b></span>
+                                <div class="pm-stage pm-stage-ok" style="margin:8px 0">
+                                    <span>Conectado con tu cuenta de Claude <b id="pm-oauth-acct" style="color:#22e39b"></b></span>
                                 </div>
                                 <button class="btn btn-ghost btn-sm" id="pm-oauth-disconnect">Desconectar cuenta</button>
                             </div>
@@ -254,36 +274,34 @@
                     </div>
                 </div>
 
-                {{-- Estado de conexión de IA cuando ya está lista (con opción de cambiar) --}}
-                <div id="pm-ai-status" class="tiny muted" hidden style="margin-bottom:10px"></div>
+                {{-- Conexión de IA + repositorio, en una línea, cuando ya está lista --}}
+                <div id="pm-ai-status" class="pm-conn" hidden></div>
 
-                {{-- Fases del proceso --}}
+                {{-- Banner de estado: SIEMPRE dice qué pasa y qué hacer ahora --}}
+                <div id="pm-stage" class="pm-stage" hidden></div>
+
+                {{-- Progreso de la generación (solo mientras genera) --}}
                 <div class="pm-phases" id="pm-phases" hidden>
                     <span class="pm-phase" data-phase="repo">🔗 Repositorio</span>
                     <span class="pm-phase" data-phase="investigando">🔍 Investigación del código</span>
                     <span class="pm-phase" data-phase="generando">🧠 Generación del plan</span>
                     <span class="pm-phase" data-phase="listo">✅ Listo</span>
                 </div>
-
                 <div class="pm-log" id="pm-log" hidden></div>
-
                 <details class="pm-think" id="pm-think" hidden>
                     <summary class="tiny" style="cursor:pointer;color:#94a3c4">🧩 Razonamiento de la IA (en vivo)</summary>
                     <pre id="pm-think-body"></pre>
                 </details>
 
-                <div class="pm-err" id="pm-error" hidden></div>
-
-                <div class="pm-check" id="pm-check" hidden>
-                    <span class="big-check">✓</span>
-                    <span>Plan terminado. Léelo abajo y, si quieres ajustarlo, escríbele a la IA en el chat.</span>
+                {{-- Panel del plan (con título claro para que se sepa qué leer) --}}
+                <div class="pm-plan-wrap" id="pm-plan-wrap" hidden>
+                    <div class="pm-plan-head">📋 Plan de optimización</div>
+                    <div class="pm-plan" id="pm-plan"></div>
                 </div>
 
-                <div class="pm-plan" id="pm-plan" hidden></div>
-
-                {{-- Chat para leer/ajustar el plan --}}
+                {{-- Chat para ajustar el plan --}}
                 <div class="pm-chat" id="pm-chat" hidden>
-                    <div class="tiny" style="font-weight:600;margin-bottom:8px">💬 Ajustar el plan con la IA</div>
+                    <div class="pm-chat-head">💬 ¿Quieres ajustar algo? Escríbele a la IA</div>
                     <div class="pm-msgs" id="pm-msgs"></div>
                     <div class="pm-input">
                         <textarea id="pm-msg" placeholder="Ej.: agrega el SQL para revertir el índice, o explícame el paso 2…"></textarea>
@@ -292,10 +310,10 @@
                 </div>
             </div>
             <div class="pm-foot">
-                <button class="btn btn-sm" id="pm-generate" hidden>🧠 Generar plan</button>
-                <button class="btn btn-ghost btn-sm" id="pm-regenerate" hidden>🔄 Regenerar plan</button>
+                <button class="btn btn-ghost btn-sm" id="pm-regenerate" hidden>🔄 Regenerar</button>
                 <span style="flex:1"></span>
                 <span class="tiny muted" id="pm-pushed" hidden></span>
+                <button class="btn btn-sm" id="pm-generate" hidden style="border-color:#c084fc66;color:#c084fc">🧠 Generar plan de optimización</button>
                 <button class="btn btn-sm" id="pm-publish" hidden style="border-color:#22e39b66;color:#22e39b">🚀 Subir solución a GitHub</button>
             </div>
         </div>
@@ -472,20 +490,40 @@ $id('pm-close').addEventListener('click', closePlan);
 $id('plan-modal').addEventListener('click', e => { if(e.target === $id('plan-modal')) closePlan(); });
 
 function show(id, on){ $id(id).hidden = !on; }
-function showError(msg){ $id('pm-error').textContent = '⚠️ ' + msg; show('pm-error', true); }
 function log(line){ const l = $id('pm-log'); l.innerHTML += line.replace(/</g,'&lt;') + '<br>'; l.scrollTop = l.scrollHeight; }
 function setPhase(name, cls){
     const el = document.querySelector('.pm-phase[data-phase="'+name+'"]');
     if(el){ el.classList.remove('on','done'); if(cls) el.classList.add(cls); }
 }
 
+// Banner de estado: SIEMPRE dice qué pasa y qué hacer. kind: info|ready|working|ok|error
+function setStage(kind, html){
+    const el = $id('pm-stage');
+    el.className = 'pm-stage pm-stage-' + kind;
+    el.innerHTML = (kind === 'working' ? '<span class="sp"></span>' : '') + '<span>' + html + '</span>';
+    el.hidden = false;
+}
+function hideStage(){ $id('pm-stage').hidden = true; }
+// showError = banner de error + volver a ofrecer «Generar»
+function showError(msg){ setStage('error', msg); footer({generate:true}); }
+
+// Botones del pie según el estado (uno principal a la vez)
+function footer(opts){
+    show('pm-generate',   !!opts.generate);
+    show('pm-regenerate', !!opts.regenerate);
+    show('pm-publish',    !!opts.publish);
+    const gen = $id('pm-generate'); gen.disabled = false; gen.innerHTML = PM.hasPlan ? '🔁 Reintentar' : '🧠 Generar plan de optimización';
+    if(opts.pushed){ $id('pm-pushed').innerHTML = opts.pushed; show('pm-pushed', true); }
+    else show('pm-pushed', false);
+}
+
 function resetModal(){
-    ['pm-setup','pm-setup-ai','pm-ai-status','pm-setup-repo','pm-phases','pm-log','pm-think','pm-error',
-     'pm-check','pm-plan','pm-chat','pm-generate','pm-regenerate','pm-publish','pm-pushed'].forEach(i => show(i, false));
+    ['pm-setup','pm-setup-ai','pm-ai-status','pm-setup-repo','pm-stage','pm-phases','pm-log','pm-think',
+     'pm-plan-wrap','pm-chat','pm-generate','pm-regenerate','pm-publish','pm-pushed'].forEach(i => show(i, false));
     $id('pm-log').innerHTML = ''; $id('pm-think-body').textContent = '';
     $id('pm-plan').innerHTML = ''; $id('pm-msgs').innerHTML = '';
     document.querySelectorAll('.pm-phase').forEach(p => p.classList.remove('on','done'));
-    PM.raw = ''; PM.streaming = false; PM.forceAiSetup = false; PM.selectedRepo = null;
+    PM.raw = ''; PM.streaming = false; PM.forceAiSetup = false; PM.selectedRepo = null; PM.hasPlan = false;
 }
 
 function closePlan(){
@@ -507,51 +545,70 @@ async function openPlan(issueId){
     renderState();
 }
 
+// Pinta el resumen de conexión (IA + repo) en una línea, con opción de cambiar.
+function renderConn(s){
+    const label = PM.aiMode === 'oauth'
+        ? '👤 Cuenta de Claude' + (s.oauth_account ? ' · ' + s.oauth_account : '')
+        : '🔑 Clave de API';
+    const repo = s.repo ? ' &nbsp;·&nbsp; 🔗 <b>' + s.repo.full_name + '</b>' : '';
+    $id('pm-ai-status').innerHTML = 'IA: <b>' + label + '</b>' + repo
+        + ' &nbsp;·&nbsp; <a href="#" id="pm-ai-change" style="color:#c084fc">cambiar conexión</a>';
+    $id('pm-ai-change').onclick = ev => { ev.preventDefault(); PM.forceAiSetup = true; renderState(); };
+}
+
 function renderState(){
     const s = PM.state;
     $id('pm-db').textContent = s.db || '—';
     PM.aiMode = s.ai_mode || 'api_key';
 
     const aiOk = s.ai_configured, repoOk = !!s.repo;
-    const showAi = !aiOk || PM.forceAiSetup;
-    const pendiente = !aiOk || !repoOk;
+    const p = s.plan;
+    PM.hasPlan = !!(p && p.status === 'listo' && p.plan && p.plan.trim());
 
-    // Conexión de IA: selector de modo (o resumen si ya está lista)
-    show('pm-setup-ai', showAi);
-    if(showAi) renderAiModes();
-    show('pm-ai-status', aiOk && !PM.forceAiSetup);
-    if(aiOk && !PM.forceAiSetup){
-        const label = PM.aiMode === 'oauth'
-            ? '👤 Cuenta de Claude' + (s.oauth_account ? ' · ' + s.oauth_account : '')
-            : '🔑 Clave de API';
-        $id('pm-ai-status').innerHTML = 'Conexión de IA: <b>' + label + '</b> · '
-            + '<a href="#" id="pm-ai-change" style="color:#c084fc">cambiar</a>';
-        $id('pm-ai-change').onclick = ev => { ev.preventDefault(); PM.forceAiSetup = true; renderState(); };
-    }
+    // Zonas dinámicas siempre limpias antes de decidir el estado
+    ['pm-phases','pm-log','pm-think','pm-plan-wrap','pm-chat'].forEach(i => show(i, false));
 
-    // Mapeo del repositorio (con buscador)
+    // ── Estado SETUP: falta conectar IA o mapear el repositorio ──────────────
+    const showAiSetup = !aiOk || PM.forceAiSetup;
+    show('pm-setup-ai', showAiSetup);
+    if(showAiSetup) renderAiModes();
     show('pm-setup-repo', !repoOk);
     if(!repoOk) renderRepoCombo();
+    show('pm-setup', showAiSetup || !repoOk);
+    show('pm-ai-status', aiOk && !PM.forceAiSetup && repoOk);
+    if(aiOk && !PM.forceAiSetup && repoOk) renderConn(s);
 
-    show('pm-setup', showAi || !repoOk);
-
-    const p = s.plan;
-    if(p && p.status === 'listo' && p.plan){
-        PM.raw = p.plan;
-        show('pm-check', true);
-        renderPlan(p.plan); show('pm-plan', true);
-        show('pm-chat', true); renderChat(p.chat || []);
-        show('pm-regenerate', !pendiente);
-        show('pm-publish', !pendiente && s.github_configured);
-        if(p.github_pr_url){
-            $id('pm-pushed').innerHTML = '🚀 Publicado' + (p.pushed_at ? ' el ' + p.pushed_at : '')
-                + ' · <a href="' + p.github_pr_url + '" target="_blank" rel="noopener" style="color:#a5b4fc">ver pull request</a>';
-            show('pm-pushed', true);
-        }
-    } else {
-        if(p && p.status === 'error' && p.error) showError('El último intento falló: ' + p.error);
-        show('pm-generate', !pendiente);
+    if(!aiOk || PM.forceAiSetup){
+        setStage('info', 'Primero <b>conecta la IA</b> aquí arriba: elige «🔑 Clave de API» o «👤 Cuenta de Claude».');
+        footer({});
+        return;
     }
+    if(!repoOk){
+        setStage('info', 'Ahora <b>elige el proyecto de GitHub</b> al que pertenece esta consulta (arriba). Solo se pide una vez por base de datos.');
+        footer({});
+        return;
+    }
+
+    // ── Estado DONE: hay un plan generado ────────────────────────────────────
+    if(PM.hasPlan){
+        PM.raw = p.plan;
+        renderPlan(p.plan);
+        show('pm-chat', true); renderChat(p.chat || []);
+        setStage('ok', '<b>Plan listo.</b> Léelo en «📋 Plan de optimización», ajústalo en el chat de abajo o súbelo a GitHub.');
+        const pushed = p.github_pr_url
+            ? '🚀 Publicado' + (p.pushed_at ? ' el ' + p.pushed_at : '') + ' · <a href="' + p.github_pr_url + '" target="_blank" rel="noopener" style="color:#a5b4fc">ver pull request</a>'
+            : '';
+        footer({ regenerate:true, publish: s.github_configured, pushed });
+        return;
+    }
+
+    // ── Estado READY / ERROR: listo para generar ─────────────────────────────
+    if(p && p.status === 'error' && p.error){
+        setStage('error', 'El último intento falló: ' + p.error);
+    } else {
+        setStage('ready', 'Todo listo. Pulsa <b>«🧠 Generar plan de optimización»</b>: la IA investigará el código en GitHub y lo escribirá aquí en vivo.');
+    }
+    footer({ generate:true });
 }
 
 // ── Conexión de IA: selector de modo (clave de API / cuenta de Claude) ───────
@@ -662,11 +719,13 @@ $id('pm-generate').addEventListener('click', startGeneration);
 $id('pm-regenerate').addEventListener('click', startGeneration);
 
 function startGeneration(){
-    ['pm-generate','pm-regenerate','pm-check','pm-error','pm-chat','pm-publish','pm-pushed','pm-setup'].forEach(i => show(i, false));
+    show('pm-setup', false);
+    footer({});                       // sin botones mientras genera
     $id('pm-plan').innerHTML = ''; $id('pm-log').innerHTML = ''; $id('pm-think-body').textContent = '';
-    ['pm-phases','pm-log','pm-plan'].forEach(i => show(i, true));
+    ['pm-phases','pm-log','pm-plan-wrap'].forEach(i => show(i, true));
     setPhase('repo','done'); setPhase('investigando','on');
     setPhase('generando',''); setPhase('listo','');
+    setStage('working', 'Generando el plan… la IA está investigando el código y escribiéndolo en vivo.');
     PM.raw = ''; PM.streaming = true;
     log('🔗 Repositorio: ' + (PM.state.repo ? PM.state.repo.full_name : '—'));
 
@@ -674,7 +733,10 @@ function startGeneration(){
     es.addEventListener('paso',    e => log('• ' + JSON.parse(e.data).m));
     es.addEventListener('archivo', e => log('📄 Leyendo ' + JSON.parse(e.data).m));
     es.addEventListener('fase', e => {
-        if(JSON.parse(e.data).fase === 'generando'){ setPhase('investigando','done'); setPhase('generando','on'); }
+        if(JSON.parse(e.data).fase === 'generando'){
+            setPhase('investigando','done'); setPhase('generando','on');
+            setStage('working', 'La IA está escribiendo el plan… puedes verlo aparecer en «📋 Plan de optimización».');
+        }
     });
     es.addEventListener('razonando', e => {
         show('pm-think', true);
@@ -691,16 +753,17 @@ function startGeneration(){
         PM.raw = (d.plan && d.plan.trim()) ? d.plan : PM.raw;
         PM.streaming = false; es.close(); PM.es = null;
         if(!PM.raw || !PM.raw.trim()){   // salvaguarda: terminó sin texto
-            showError('La IA no devolvió ningún texto. Reintenta o cambia la conexión de IA.');
-            show('pm-generate', true); setPhase('generando','');
+            showError('La IA no devolvió ningún texto. Reintenta o cambia la conexión de IA (enlace «cambiar conexión»).');
+            setPhase('generando','');
             return;
         }
+        PM.hasPlan = true;
         renderPlan(PM.raw);
         setPhase('generando','done'); setPhase('listo','done');
-        show('pm-check', true); show('pm-chat', true);
-        show('pm-regenerate', true);
-        if(PM.state.github_configured) show('pm-publish', true);
-        $id('pm-check').scrollIntoView({behavior:'smooth', block:'center'});
+        setStage('ok', '<b>Plan listo.</b> Léelo en «📋 Plan de optimización», ajústalo en el chat de abajo o súbelo a GitHub.');
+        show('pm-chat', true);
+        footer({ regenerate:true, publish: PM.state.github_configured });
+        $id('pm-stage').scrollIntoView({behavior:'smooth', block:'center'});
     });
     es.addEventListener('error', e => {
         if(!PM.streaming) return;   // ya terminó (cierre normal tras éxito o error ya mostrado)
@@ -708,10 +771,8 @@ function startGeneration(){
         try{ if(e && e.data) msg = JSON.parse(e.data).m; }catch(_){}
         PM.streaming = false;
         if(PM.es){ PM.es.close(); PM.es = null; }   // cerrar evita que EventSource reconecte y regenere
-        show('pm-check', false);
         showError(msg || 'Se interrumpió la generación (se perdió la conexión con el servidor). Reintenta.');
         setPhase('generando','');
-        show('pm-generate', true);
     });
 }
 
@@ -812,7 +873,7 @@ $id('pm-publish').addEventListener('click', async () => {
 // ── Mini-renderizador de Markdown para el plan ───────────────────────────────
 function renderPlan(md){
     $id('pm-plan').innerHTML = mdRender(md || '');
-    show('pm-plan', true);
+    show('pm-plan-wrap', true);
 }
 function mdRender(md){
     const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
