@@ -5,10 +5,16 @@
 @section('actions')
     <a href="{{ route('dashboard.index') }}" class="btn btn-ghost btn-sm">← Servidores</a>
     <a href="{{ route('dashboard.servers.trends', $server) }}" class="btn btn-primary btn-sm">📊 Tendencias y análisis</a>
-    <a href="{{ route('dashboard.servers.live', $server) }}" class="btn btn-sm">👥 Usuarios en vivo</a>
-    <a href="{{ route('dashboard.servers.stress', $server) }}" class="btn btn-sm">🧪 Prueba de estrés</a>
-    <button id="btn-test" class="btn btn-sm" data-url="{{ route('dashboard.servers.test', $server) }}">🔌 Probar conexión</button>
-    <a href="{{ route('dashboard.servers.edit', $server) }}" class="btn btn-sm">✏️ Editar</a>
+    <details class="act-menu" id="actMenu">
+        <summary class="btn btn-sm">⋯ Más acciones</summary>
+        <div class="act-menu-list">
+            <a href="{{ route('dashboard.servers.live', $server) }}">👥 Usuarios en vivo</a>
+            <a href="{{ route('dashboard.servers.stress', $server) }}">🧪 Prueba de estrés</a>
+            <button type="button" id="btn-test" data-url="{{ route('dashboard.servers.test', $server) }}">🔌 Probar conexión</button>
+            <div class="act-menu-sep"></div>
+            <a href="{{ route('dashboard.servers.edit', $server) }}">✏️ Editar servidor</a>
+        </div>
+    </details>
 @endsection
 
 @section('content')
@@ -275,6 +281,19 @@
 
 @push('scripts')
 <style>
+    /* Menú "⋯ Más acciones" del encabezado */
+    .act-menu{position:relative}
+    .act-menu>summary{list-style:none;cursor:pointer}
+    .act-menu>summary::-webkit-details-marker{display:none}
+    .act-menu[open]>summary{border-color:var(--accent);background:#202c52}
+    .act-menu-list{position:absolute;right:0;top:calc(100% + 6px);min-width:210px;z-index:60;
+        background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:6px;
+        box-shadow:0 16px 40px rgba(0,0,0,.5);display:flex;flex-direction:column;gap:2px}
+    .act-menu-list a,.act-menu-list button{display:flex;align-items:center;gap:9px;width:100%;text-align:left;
+        padding:9px 11px;border-radius:8px;background:transparent;border:0;color:var(--text);
+        font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap}
+    .act-menu-list a:hover,.act-menu-list button:hover{background:#202c52}
+    .act-menu-sep{height:1px;background:var(--line);margin:4px 2px}
     .dom-sub:hover{background:var(--card2)}
     .hidden{display:none}
 </style>
@@ -412,5 +431,18 @@ document.getElementById('btn-test')?.addEventListener('click', async (ev)=>{
     }catch(e){ box.innerHTML='<div class="alert alert-bad">Error al probar la conexión</div>'; }
     btn.disabled=false; btn.textContent=old;
 });
+
+// ── Menú "⋯ Más acciones": cerrar al hacer clic afuera o en una opción ──
+(function(){
+    const menu = document.getElementById('actMenu');
+    if(!menu) return;
+    // al elegir una opción (incluida "Probar conexión") se cierra el menú
+    menu.querySelectorAll('a, button').forEach(el =>
+        el.addEventListener('click', () => menu.removeAttribute('open')));
+    document.addEventListener('click', e => {
+        if(menu.open && !menu.contains(e.target)) menu.removeAttribute('open');
+    });
+    document.addEventListener('keydown', e => { if(e.key === 'Escape') menu.removeAttribute('open'); });
+})();
 </script>
 @endpush
