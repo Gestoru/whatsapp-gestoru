@@ -293,18 +293,38 @@ class PlanController extends Controller
         try {
             $base   = $plan->investigation['branch'] ?? $this->github->defaultBranch($full);
             $branch = 'optimizacion/consulta-'.$issue->id;
-            $path   = 'docs/optimizaciones/consulta-'.$issue->id.'.md';
+            $ddl    = $this->extractIndexDdl((string) $plan->plan);
 
             $this->github->createBranch($full, $branch, $base);
+
+            // 1) El documento del plan (siempre).
+            $docPath = 'docs/optimizaciones/consulta-'.$issue->id.'.md';
             $fileUrl = $this->github->commitFile(
-                $full, $branch, $path,
-                $this->planDocument($issue, $plan),
-                'docs: plan de optimización para consulta MySQL #'.$issue->id.' ('.($issue->metrics['db'] ?? 'BD').')'
+                $full, $branch, $docPath, $this->planDocument($issue, $plan),
+                'docs: plan de optimización consulta MySQL #'.$issue->id.' ('.($issue->metrics['db'] ?? 'BD').')'
             );
+            $artifacts = [$docPath];
+
+            // 2) Migración + script ejecutable, si la IA propuso un índice.
+            if ($ddl) {
+                $migPath = 'database/migrations/'.now()->format('Y_m_d_His').'_optimiza_'.$ddl['table'].'_incidencia_'.$issue->id.'.php';
+                $this->github->commitFile(
+                    $full, $branch, $migPath, $this->buildMigration($ddl, $issue->id),
+                    'feat: migración índice '.$ddl['index'].' para consulta MySQL #'.$issue->id
+                );
+                $shPath = 'scripts/optimizaciones/consulta-'.$issue->id.'.sh';
+                $this->github->commitFile(
+                    $full, $branch, $shPath, $this->buildShellScript($ddl, $issue),
+                    'feat: script idempotente para aplicar el índice de la consulta #'.$issue->id
+                );
+                $artifacts[] = $migPath;
+                $artifacts[] = $shPath;
+            }
+
             $prUrl = $this->github->createPullRequest(
                 $full, $branch, $base,
-                '⚡ Optimización de consulta MySQL · '.($issue->metrics['db'] ?? 'BD').' · incidencia #'.$issue->id,
-                $this->prBody($issue, $plan)
+                '⚡ Optimización consulta MySQL · '.($issue->metrics['db'] ?? 'BD').' · incidencia #'.$issue->id,
+                $this->prBody($issue, $plan, $ddl, $artifacts)
             );
 
             $plan->update([
@@ -313,17 +333,157 @@ class PlanController extends Controller
                 'github_file_url' => $fileUrl,
                 'pushed_at'       => now(),
             ]);
-            $issue->logEvent('plan_publicado', 'Plan publicado en GitHub: '.$prUrl);
+            $issue->logEvent('plan_publicado', 'Plan publicado en GitHub'.($ddl ? ' (con migración + script)' : '').': '.$prUrl);
 
-            return response()->json(['ok' => true, 'pr_url' => $prUrl, 'file_url' => $fileUrl, 'branch' => $branch]);
+            return response()->json([
+                'ok' => true, 'pr_url' => $prUrl, 'file_url' => $fileUrl,
+                'branch' => $branch, 'artifacts' => $artifacts, 'has_migration' => (bool) $ddl,
+            ]);
         } catch (\Throwable $e) {
+            report($e);
             $issue->logEvent('plan_error', 'Falló la publicación en GitHub: '.\Illuminate\Support\Str::limit($e->getMessage(), 160));
 
             return response()->json(['ok' => false, 'error' => $e->getMessage()], 500);
         }
     }
 
-    /** Documento Markdown que se sube al repositorio (plan + trazabilidad). */
+    /**
+     * Extrae de la sección «🤖 Para aplicar» del plan la sentencia de índice,
+     * para poder generar la migración y el script de forma determinista.
+     *
+     * @return array{table:string, index:string, columns:array<int,string>}|null
+     */
+    private function extractIndexDdl(string $planMd): ?array
+    {
+        if (! preg_match_all('/```(?:sql)?\s*(.+?)```/is', $planMd, $blocks)) {
+            return null;
+        }
+        foreach ($blocks[1] as $code) {
+            foreach (preg_split('/;\s*[\r\n]|;\s*$/', trim($code)) as $stmt) {
+                $stmt = trim((string) $stmt);
+                // ALTER TABLE `t` ADD INDEX `name` (`c1`, `c2`)
+                if (preg_match('/ALTER\s+TABLE\s+`?([A-Za-z0-9_]+)`?\s+ADD\s+(?:INDEX|KEY)\s+`?([A-Za-z0-9_]+)`?\s*\(([^)]+)\)/i', $stmt, $mm)) {
+                    return $this->normalizeDdl($mm[1], $mm[2], $mm[3]);
+                }
+                // CREATE INDEX `name` ON `t` (`c1`, `c2`)
+                if (preg_match('/CREATE\s+INDEX\s+`?([A-Za-z0-9_]+)`?\s+ON\s+`?([A-Za-z0-9_]+)`?\s*\(([^)]+)\)/i', $stmt, $mm)) {
+                    return $this->normalizeDdl($mm[2], $mm[1], $mm[3]);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /** @return array{table:string, index:string, columns:array<int,string>} */
+    private function normalizeDdl(string $table, string $index, string $colsRaw): array
+    {
+        $columns = [];
+        foreach (explode(',', $colsRaw) as $c) {
+            $c = preg_replace('/\(\d+\)/', '', $c);          // quita longitud tipo (191)
+            if (preg_match('/([A-Za-z0-9_]+)/', (string) $c, $cm)) {
+                $columns[] = $cm[1];
+            }
+        }
+
+        return ['table' => $table, 'index' => $index, 'columns' => array_values(array_filter($columns))];
+    }
+
+    /** Migración Laravel idempotente que crea el índice propuesto. */
+    private function buildMigration(array $ddl, int $issueId): string
+    {
+        $colsSql = implode(', ', array_map(fn ($c) => '`'.$c.'`', $ddl['columns']));
+        $tpl = <<<'PHP'
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Support\Facades\DB;
+
+/*
+ * Optimización automática generada desde el panel de infraestructura
+ * (incidencia #__ID__). Crea el índice `__INDEX__` sobre `__TABLE__` de
+ * forma idempotente para acelerar una consulta lenta detectada en producción.
+ */
+return new class extends Migration
+{
+    public function up(): void
+    {
+        if (! $this->indexExists('__TABLE__', '__INDEX__')) {
+            DB::statement('ALTER TABLE `__TABLE__` ADD INDEX `__INDEX__` (__COLS__)');
+        }
+    }
+
+    public function down(): void
+    {
+        if ($this->indexExists('__TABLE__', '__INDEX__')) {
+            DB::statement('ALTER TABLE `__TABLE__` DROP INDEX `__INDEX__`');
+        }
+    }
+
+    private function indexExists(string $table, string $index): bool
+    {
+        return DB::selectOne(
+            'SELECT 1 FROM information_schema.statistics
+             WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ? LIMIT 1',
+            [$table, $index]
+        ) !== null;
+    }
+};
+
+PHP;
+
+        return strtr($tpl, [
+            '__ID__'    => (string) $issueId,
+            '__TABLE__' => $ddl['table'],
+            '__INDEX__' => $ddl['index'],
+            '__COLS__'  => $colsSql,
+        ]);
+    }
+
+    /** Script bash idempotente para aplicar el índice desde consola. */
+    private function buildShellScript(array $ddl, PerfIssue $issue): string
+    {
+        $tpl = <<<'BASH'
+#!/usr/bin/env bash
+# ────────────────────────────────────────────────────────────────────────────
+# Optimización de la consulta MySQL de la incidencia #__ID__ (tabla __TABLE__).
+# Crea el índice __INDEX__ de forma IDEMPOTENTE (no falla si ya existe) y
+# muestra los índices antes y después para dejar constancia de la mejora.
+#
+# Uso:
+#   DB_DATABASE=__DB__ DB_USERNAME=usuario MYSQL_PWD=clave ./consulta-__ID__.sh
+#   (MYSQL_PWD lo lee el cliente mysql automáticamente; no queda en el historial.)
+# ────────────────────────────────────────────────────────────────────────────
+set -euo pipefail
+
+DB="${DB_DATABASE:-__DB__}"
+DBUSER="${DB_USERNAME:-root}"
+run(){ mysql -u "$DBUSER" "$DB" -e "$1"; }
+
+echo "== Índices actuales en __TABLE__ =="
+run "SHOW INDEX FROM __TABLE__;"
+
+echo
+echo "== Creando el índice __INDEX__ si no existe… =="
+run "SET @existe := (SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = '__TABLE__' AND index_name = '__INDEX__'); SET @sql := IF(@existe = 0, 'ALTER TABLE __TABLE__ ADD INDEX __INDEX__ (__COLS__), ALGORITHM=INPLACE, LOCK=NONE', 'DO 0'); PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;"
+
+echo
+echo "== Índices después =="
+run "SHOW INDEX FROM __TABLE__;"
+echo "✅ Listo. Revisa el promedio de la consulta en el panel en 24-48 h."
+
+BASH;
+
+        return strtr($tpl, [
+            '__ID__'    => (string) $issue->id,
+            '__TABLE__' => $ddl['table'],
+            '__INDEX__' => $ddl['index'],
+            '__COLS__'  => implode(', ', $ddl['columns']),
+            '__DB__'    => (string) ($issue->metrics['db'] ?? ''),
+        ]);
+    }
+
+    /** Documento Markdown que se sube al repositorio (metadatos + plan). */
     private function planDocument(PerfIssue $issue, PerfPlan $plan): string
     {
         $m = $issue->metrics ?? [];
@@ -344,33 +504,41 @@ class PlanController extends Controller
             '| Reincidencias | '.$issue->reopened_count.' |',
             '| Plan generado | '.optional($plan->generated_at)->format('d/m/Y H:i').' |',
             '',
-            '## Consulta',
-            '```sql',
-            (string) ($m['query'] ?? ''),
-            '```',
-            '',
             '---',
             '',
             (string) $plan->plan,
         ]);
     }
 
-    private function prBody(PerfIssue $issue, PerfPlan $plan): string
+    private function prBody(PerfIssue $issue, PerfPlan $plan, ?array $ddl, array $artifacts): string
     {
         $m = $issue->metrics ?? [];
         $files = collect($plan->investigation['files'] ?? [])->pluck('path')->implode("\n- ");
 
-        return implode("\n", [
-            'Plan de optimización generado con IA desde el panel de infraestructura.',
+        $lines = [
+            'Optimización generada con IA desde el panel de infraestructura.',
             '',
-            '**Consulta afectada** (BD `'.($m['db'] ?? '—').'`): '.number_format((int) ($m['total_s'] ?? 0)).' s acumulados · '.number_format((int) ($m['execs'] ?? 0)).' ejecuciones · '.($m['avg_ms'] ?? '?').' ms promedio.',
+            '**Consulta** (BD `'.($m['db'] ?? '—').'`): '.number_format((int) ($m['total_s'] ?? 0)).' s acumulados · '.number_format((int) ($m['execs'] ?? 0)).' ejecuciones · '.($m['avg_ms'] ?? '?').' ms promedio.',
             '',
-            '**Archivos investigados:**',
-            '- '.($files ?: '—'),
-            '',
-            'El plan completo está en `docs/optimizaciones/consulta-'.$issue->id.'.md` dentro de esta rama.',
-            '',
-            '_Trazabilidad: incidencia #'.$issue->id.' · detectada el '.optional($issue->first_detected_at)->format('d/m/Y H:i').' · '.$issue->reopened_count.' reincidencia(s)._',
-        ]);
+            '### 📦 Qué incluye este PR',
+        ];
+        if ($ddl) {
+            $lines[] = '- ✅ **Migración** `'.$artifacts[1].'` — crea el índice `'.$ddl['index'].'` en `'.$ddl['table'].'` (`'.implode('`, `', $ddl['columns']).'`) de forma idempotente. Aplícala con `php artisan migrate`.';
+            $lines[] = '- ✅ **Script** `'.$artifacts[2].'` — alternativa por consola (`bash '.$artifacts[2].'`), también idempotente, con `SHOW INDEX` antes/después.';
+            $lines[] = '- 📄 **Plan completo** `'.$artifacts[0].'`.';
+            $lines[] = '';
+            $lines[] = '> ⚠️ El índice es el cambio **seguro y automatizable**. Otros ajustes del plan (código, `SELECT *`, posible N+1) son **manuales** — revísalos en el documento antes de mezclar.';
+        } else {
+            $lines[] = '- 📄 **Plan completo** `'.$artifacts[0].'`.';
+            $lines[] = '';
+            $lines[] = '> La IA no propuso un índice auto-aplicable para esta consulta; la solución es de código. Revisa el plan para los pasos manuales.';
+        }
+        $lines[] = '';
+        $lines[] = '**Archivos investigados:**';
+        $lines[] = '- '.($files ?: '—');
+        $lines[] = '';
+        $lines[] = '_Trazabilidad: incidencia #'.$issue->id.' · detectada el '.optional($issue->first_detected_at)->format('d/m/Y H:i').' · '.$issue->reopened_count.' reincidencia(s)._';
+
+        return implode("\n", $lines);
     }
 }

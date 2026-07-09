@@ -856,9 +856,13 @@ $id('pm-publish').addEventListener('click', async () => {
             headers:{'X-CSRF-TOKEN':CSRF, Accept:'application/json'}});
         const d = await r.json();
         if(d.ok){
-            $id('pm-pushed').innerHTML = '🚀 Publicado ahora · <a href="' + d.pr_url
+            const extra = d.has_migration ? ' · incluye migración + script listos para ejecutar' : '';
+            $id('pm-pushed').innerHTML = '🚀 Publicado ahora' + extra + ' · <a href="' + d.pr_url
                 + '" target="_blank" rel="noopener" style="color:#a5b4fc">ver pull request</a>';
             show('pm-pushed', true);
+            setStage('ok', d.has_migration
+                ? '<b>Solución subida a GitHub.</b> El PR trae la <b>migración</b> (crea el índice con <code>php artisan migrate</code>) y un <b>script .sh</b> idempotente. Ábrelo y revísalo antes de mezclar.'
+                : '<b>Plan subido a GitHub.</b> La IA no propuso un índice auto-aplicable; revisa el plan para los cambios manuales.');
             btn.innerHTML = '✅ Publicado en GitHub';
         } else {
             showError(d.error || 'No se pudo publicar.');

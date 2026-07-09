@@ -378,10 +378,10 @@ class AiPlanner
     private function systemPrompt(): string
     {
         return implode("\n", [
-            'Eres un ingeniero senior experto en optimización de MySQL y en el framework del repositorio que se te muestra.',
-            'Tu trabajo: generar planes de optimización accionables para consultas lentas detectadas en producción.',
-            'Escribe SIEMPRE en español. Sé concreto: índices exactos (CREATE INDEX…), cambios de código con el archivo y la línea aproximada, y cómo verificar la mejora.',
-            'No inventes archivos ni columnas: básate solo en lo que se te muestra. Si falta información, dilo y explica cómo obtenerla.',
+            'Eres un desarrollador senior (SRE + backend) experto en MySQL y en el framework del repositorio que se te muestra.',
+            'Le hablas al equipo que mantiene el sistema: primero explicas en lenguaje HUMANO y claro qué pasa y qué vas a resolver, y luego das la solución técnica lista para aplicar.',
+            'Escribe SIEMPRE en español. Sé concreto y honesto: si no puedes ver un archivo, dilo; no inventes nombres de archivos ni de columnas que no estén en la consulta o el código mostrado.',
+            'La solución principal debe poder aplicarse tal cual (índice exacto, migración, script). Nada de generalidades.',
         ]);
     }
 
@@ -420,13 +420,39 @@ class AiPlanner
         }
 
         $parts[] = implode("\n", [
-            '## Formato del plan (obligatorio)',
-            '1. **🎯 Diagnóstico** — por qué esta consulta es lenta (2-4 frases, lenguaje claro).',
-            '2. **📍 Origen en el código** — archivo(s) exacto(s) del repo donde nace la consulta.',
-            '3. **🛠️ Cambios propuestos** — pasos numerados: SQL exacto de índices (CREATE INDEX…), cambios de código (mostrar antes/después), o migración Laravel si aplica.',
-            '4. **✅ Verificación** — cómo comprobar la mejora (EXPLAIN antes/después, qué mirar en este panel).',
-            '5. **⚠️ Riesgos** — qué cuidar al aplicar (bloqueos por creación de índices, etc.).',
-            'Sé específico y directo; el plan debe poder aplicarse tal cual.',
+            '## Formato OBLIGATORIO del plan (Markdown, EXACTAMENTE en este orden)',
+            '',
+            '## 📌 Resumen para el equipo',
+            'En lenguaje HUMANO y directo, como un desarrollador senior hablándole a su equipo (3-5 frases, sin jerga innecesaria): qué hace esta consulta dentro del sistema, por qué está pesando ahora, qué vas a hacer para resolverlo y qué mejora concreta se espera. Que hasta alguien no técnico entienda el problema y la solución.',
+            '',
+            '## 🔎 Consulta a optimizar',
+            'Muestra la consulta en un bloque ```sql (tal cual, para que quede a la vista).',
+            '',
+            '## 🎯 Diagnóstico',
+            'Por qué es lenta, técnico y claro (2-4 frases).',
+            '',
+            '## 📍 Origen en el código',
+            'Archivo(s) del repo donde nace la consulta. Si no pudiste verlos, dilo y da los comandos para localizarlos.',
+            '',
+            '## 🛠️ Solución paso a paso',
+            'Los cambios concretos con SQL exacto y, si aplica, el cambio de código (antes/después).',
+            '',
+            '## ✅ Verificación',
+            'EXPLAIN antes/después y qué revisar en el panel a las 24-48 h.',
+            '',
+            '## ⚠️ Riesgos',
+            'Qué cuidar al aplicar (bloqueos por índices, escritura, etc.).',
+            '',
+            '## 🤖 Para aplicar',
+            'Cierra SIEMPRE con esta sección para que el panel genere la migración y el script automáticamente. Da UNA sola sentencia DDL de índice (la más importante), idempotente, con nombres de columna REALES de la consulta, en ESTE formato exacto:',
+            '',
+            'Tabla: `nombre_tabla`',
+            'Índice: `nombre_indice`',
+            '```sql',
+            'ALTER TABLE `nombre_tabla` ADD INDEX `nombre_indice` (`col1`, `col2`);',
+            '```',
+            '',
+            'Si de verdad NO aplica un índice (la solución es solo de código), escribe en esa sección exactamente «Sin índice aplicable» y explica por qué en una frase.',
         ]);
 
         return implode("\n", $parts);
