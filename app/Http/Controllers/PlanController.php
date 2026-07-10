@@ -61,6 +61,8 @@ class PlanController extends Controller
                 'github_pr_url'   => $plan->github_pr_url,
                 'github_file_url' => $plan->github_file_url,
                 'pushed_at'       => optional($plan->pushed_at)->format('d/m/Y H:i'),
+                'code_commit_url' => $plan->code_commit_url,
+                'code_pushed_at'  => optional($plan->code_pushed_at)->format('d/m/Y H:i'),
             ] : null,
         ]);
     }
@@ -328,6 +330,154 @@ class PlanController extends Controller
 
             return response()->json(['ok' => false, 'error' => $e->getMessage()], 500);
         }
+    }
+
+    /** Genera los cambios de código propuestos por la IA y los devuelve como diff. */
+    public function proposeCode(Server $server, PerfIssue $issue)
+    {
+        abort_unless($issue->server_id === $server->id, 404);
+
+        $plan = $issue->plan;
+        if (! $plan || $plan->status !== 'listo') {
+            return response()->json(['ok' => false, 'error' => 'Primero genera el plan con la IA.'], 422);
+        }
+        if (! $this->planner->configured()) {
+            return response()->json(['ok' => false, 'error' => 'La IA no está conectada.'], 422);
+        }
+        $repo = $this->planner->repoFor($issue);
+        if (! $repo) {
+            return response()->json(['ok' => false, 'error' => 'La consulta no está mapeada a un repositorio.'], 422);
+        }
+
+        try {
+            $inv   = $this->planner->investigate($issue, $repo, fn ($e = null, $m = null) => null);
+            $edits = $this->planner->proposeEdits($plan, $inv['contents']);
+            $plan->update(['edits' => $edits]);
+
+            return response()->json([
+                'ok'     => true,
+                'count'  => count($edits),
+                'branch' => $inv['branch'],
+                'files'  => $this->buildDiffs($repo, $inv['branch'], $edits),
+            ]);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json(['ok' => false, 'error' => $e->getMessage().$this->aiHint()], 500);
+        }
+    }
+
+    /** Aplica los cambios aceptados y los sube en un commit directo a la rama principal. */
+    public function applyCode(Server $server, PerfIssue $issue)
+    {
+        abort_unless($issue->server_id === $server->id, 404);
+
+        $plan = $issue->plan;
+        if (! $plan || empty($plan->edits)) {
+            return response()->json(['ok' => false, 'error' => 'No hay cambios de código propuestos.'], 422);
+        }
+        if (! $this->github->configured()) {
+            return response()->json(['ok' => false, 'error' => 'GitHub no está conectado.'], 422);
+        }
+        $repo = $this->planner->repoFor($issue);
+        if (! $repo) {
+            return response()->json(['ok' => false, 'error' => 'La consulta no está mapeada a un repositorio.'], 422);
+        }
+
+        try {
+            $branch  = $this->github->defaultBranch($repo->full_name);
+            $files   = [];
+            $applied = 0;
+            $skipped = [];
+
+            // Agrupa las ediciones por archivo y aplícalas solo si el fragmento
+            // sigue existiendo y es único (si no, se omite para no romper nada).
+            $byPath = [];
+            foreach ($plan->edits as $e) {
+                $byPath[$e['path']][] = $e;
+            }
+            foreach ($byPath as $path => $edits) {
+                $content = $this->github->fileContent($repo->full_name, $path, $branch);
+                if ($content === null) {
+                    $skipped[] = $path.' (no se pudo leer)';
+                    continue;
+                }
+                $changed = false;
+                foreach ($edits as $e) {
+                    if (substr_count($content, $e['old_string']) === 1) {
+                        $content = str_replace($e['old_string'], $e['new_string'], $content);
+                        $changed = true;
+                        $applied++;
+                    } else {
+                        $skipped[] = $path.' — '.($e['explanation'] ?: 'fragmento no ubicable');
+                    }
+                }
+                if ($changed) {
+                    $files[$path] = $content;
+                }
+            }
+
+            if (empty($files)) {
+                return response()->json(['ok' => false, 'error' => 'Los fragmentos ya no coinciden con el código actual. Vuelve a proponer los cambios.'], 422);
+            }
+
+            $url = $this->github->commitFiles(
+                $repo->full_name, $branch, $files,
+                'refactor: optimización consulta MySQL #'.$issue->id.' ('.($issue->metrics['db'] ?? 'BD').') · cambios de código'
+            );
+            $plan->update(['code_commit_url' => $url, 'code_pushed_at' => now()]);
+            $issue->logEvent('plan_publicado', 'Cambios de código commiteados a «'.$branch.'» ('.$applied.' cambio/s): '.$url);
+
+            return response()->json([
+                'ok' => true, 'commit_url' => $url, 'branch' => $branch,
+                'applied' => $applied, 'skipped' => $skipped, 'files' => array_keys($files),
+            ]);
+        } catch (\Throwable $e) {
+            report($e);
+            $issue->logEvent('plan_error', 'Falló el commit de código: '.\Illuminate\Support\Str::limit($e->getMessage(), 160));
+
+            return response()->json(['ok' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Trae los archivos reales de GitHub, ubica cada edición y arma el diff
+     * (antes/después) marcando si el fragmento se puede aplicar sin ambigüedad.
+     *
+     * @param array<int, array{path:string, old_string:string, new_string:string, explanation:string}> $edits
+     * @return array<int, array{path:string, hunks:array<int, array<string,string>>}>
+     */
+    private function buildDiffs(Repository $repo, string $branch, array $edits): array
+    {
+        $cache = [];
+        $byFile = [];
+        foreach ($edits as $e) {
+            $path = $e['path'];
+            if (! array_key_exists($path, $cache)) {
+                $cache[$path] = $this->github->fileContent($repo->full_name, $path, $branch);
+            }
+            $content = $cache[$path];
+            $status = 'ok';
+            if ($content === null) {
+                $status = 'no_file';
+            } else {
+                $n = substr_count($content, $e['old_string']);
+                $status = $n === 0 ? 'not_found' : ($n > 1 ? 'ambiguous' : 'ok');
+            }
+            $byFile[$path][] = [
+                'explanation' => $e['explanation'],
+                'before'      => $e['old_string'],
+                'after'       => $e['new_string'],
+                'status'      => $status,
+            ];
+        }
+
+        $out = [];
+        foreach ($byFile as $path => $hunks) {
+            $out[] = ['path' => $path, 'hunks' => $hunks];
+        }
+
+        return $out;
     }
 
     /**

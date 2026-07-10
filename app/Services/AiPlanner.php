@@ -375,6 +375,108 @@ class AiPlanner
         return $full;
     }
 
+    /**
+     * Pide a la IA cambios de código CONCRETOS para implementar el plan, como
+     * una lista de ediciones (archivo + fragmento exacto a reemplazar) que el
+     * usuario podrá revisar como diff y aceptar o rechazar.
+     *
+     * @param array<string,string> $contents  ruta => contenido del archivo
+     * @return array<int, array{path:string, old_string:string, new_string:string, explanation:string}>
+     */
+    public function proposeEdits(PerfPlan $plan, array $contents): array
+    {
+        $parts = [
+            'Con base en el PLAN y en el contenido REAL de los archivos, propón los cambios de código concretos y MÍNIMOS para implementar la optimización.',
+            'NO incluyas la creación del índice ni DDL de base de datos (eso se maneja aparte con una migración).',
+            '',
+            'Devuelve ÚNICAMENTE un bloque ```json con un array de ediciones. Cada edición es un objeto:',
+            '{',
+            '  "path": "ruta/exacta/del/archivo tal como se muestra",',
+            '  "old_string": "fragmento EXACTO copiado del archivo, con su indentación y espacios, suficiente para ser ÚNICO en el archivo",',
+            '  "new_string": "el texto que lo reemplaza",',
+            '  "explanation": "una frase en español: qué logra este cambio"',
+            '}',
+            '',
+            'Reglas estrictas:',
+            '- old_string debe existir TAL CUAL en el archivo mostrado y aparecer UNA sola vez (agrega líneas de contexto si hace falta para que sea único).',
+            '- Cambios mínimos y seguros; nunca reescribas un archivo completo.',
+            '- Si con lo que ves NO puedes proponer un cambio de código seguro, devuelve un array vacío [].',
+            '',
+            '## Plan de optimización',
+            (string) $plan->plan,
+            '',
+            '## Archivos del repositorio',
+        ];
+        foreach ($contents as $path => $body) {
+            $parts[] = '### '.$path;
+            $parts[] = '```';
+            $parts[] = $body;
+            $parts[] = '```';
+        }
+
+        $msg = $this->client()->messages->create(
+            maxTokens: 12000,
+            messages: [['role' => 'user', 'content' => implode("\n", $parts)]],
+            model: $this->model(),
+            system: $this->wrapSystem('Eres un desarrollador senior. Respondes solo con el JSON pedido, sin texto extra.'),
+            thinking: ['type' => 'adaptive'],
+            requestOptions: ['timeout' => 600],
+        );
+
+        return $this->parseEdits($this->textOf($msg));
+    }
+
+    /** Extrae el texto de la respuesta (concatena los bloques de texto). */
+    private function textOf(object $message): string
+    {
+        $out = '';
+        foreach (($message->content ?? []) as $block) {
+            if (($block->type ?? '') === 'text') {
+                $out .= $block->text ?? '';
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return array<int, array{path:string, old_string:string, new_string:string, explanation:string}>
+     */
+    private function parseEdits(string $text): array
+    {
+        // Toma el bloque ```json … ``` si viene, si no, todo el texto.
+        if (preg_match('/```(?:json)?\s*(\[.*\])\s*```/is', $text, $m)) {
+            $json = $m[1];
+        } elseif (preg_match('/(\[.*\])/is', $text, $m)) {
+            $json = $m[1];
+        } else {
+            return [];
+        }
+
+        $data = json_decode($json, true);
+        if (! is_array($data)) {
+            return [];
+        }
+
+        $edits = [];
+        foreach ($data as $e) {
+            if (! is_array($e) || empty($e['path']) || ! isset($e['old_string'], $e['new_string'])) {
+                continue;
+            }
+            if ($e['old_string'] === '' || $e['old_string'] === $e['new_string']) {
+                continue;
+            }
+            $edits[] = [
+                'path'        => (string) $e['path'],
+                'old_string'  => (string) $e['old_string'],
+                'new_string'  => (string) $e['new_string'],
+                'explanation' => (string) ($e['explanation'] ?? ''),
+            ];
+        }
+
+        return $edits;
+    }
+
     private function systemPrompt(): string
     {
         return implode("\n", [

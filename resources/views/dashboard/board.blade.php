@@ -146,6 +146,22 @@
     .pm-plan blockquote{border-left:3px solid #c084fc66;margin:8px 0;padding:2px 12px;color:var(--muted)}
     .pm-chat{border-top:1px solid var(--line);margin-top:16px;padding-top:14px}
     .pm-chat-head{font-size:12.5px;font-weight:600;margin-bottom:9px;color:var(--text)}
+    /* Cambios de código (diff antes/después) */
+    .pm-code{border-top:1px solid var(--line);margin-top:16px;padding-top:14px}
+    .pm-code-head{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+    .pm-code-head span{font-weight:600;font-size:12.5px;flex:1}
+    #pm-code-status{margin:6px 0;line-height:1.5}
+    .pm-diff-file{border:1px solid var(--line);border-radius:10px;margin-bottom:10px;overflow:hidden}
+    .pm-diff-path{background:#0e1836;padding:7px 12px;font-family:ui-monospace,monospace;font-size:11.5px;
+        color:#c4b5fd;border-bottom:1px solid var(--line);word-break:break-all}
+    .pm-diff-hunk{padding:9px 12px;border-bottom:1px solid #ffffff08}
+    .pm-diff-hunk:last-child{border-bottom:none}
+    .pm-diff-exp{font-size:12px;color:var(--muted);margin-bottom:6px}
+    .pm-diff-hunk pre{margin:0 0 4px;font-size:11px;font-family:ui-monospace,monospace;white-space:pre-wrap;
+        word-break:break-word;padding:6px 9px;border-radius:6px;line-height:1.5}
+    .pm-diff-hunk pre.del{background:#ff4d6d14;border-left:2px solid #ff4d6d;color:#fca5a5}
+    .pm-diff-hunk pre.add{background:#22e39b14;border-left:2px solid #22e39b;color:#86efac;margin-bottom:0}
+    .pm-diff-warn{font-size:11px;color:#fbbf24;margin-top:5px}
     .pm-msgs{display:flex;flex-direction:column;gap:8px;max-height:280px;overflow-y:auto;margin-bottom:10px}
     .pm-msg{border-radius:11px;padding:9px 13px;font-size:12.5px;line-height:1.65;max-width:85%;white-space:pre-wrap;word-break:break-word}
     .pm-msg.user{align-self:flex-end;background:#1d2a55;border:1px solid #31408066}
@@ -297,6 +313,21 @@
                 <div class="pm-plan-wrap" id="pm-plan-wrap" hidden>
                     <div class="pm-plan-head">📋 Plan de optimización</div>
                     <div class="pm-plan" id="pm-plan"></div>
+                </div>
+
+                {{-- Cambios de código: la IA propone, tú ves el diff y aceptas o rechazas --}}
+                <div class="pm-code" id="pm-code" hidden>
+                    <div class="pm-code-head">
+                        <span>🛠️ Cambios de código</span>
+                        <button class="btn btn-sm" id="pm-code-gen">🤖 Proponer cambios</button>
+                    </div>
+                    <p class="tiny muted" style="margin:0 0 8px">La IA propone las ediciones en los archivos del repo; revisa el antes/después y acepta para subirlas, o recházalas. (El índice va aparte, con el botón de abajo.)</p>
+                    <div id="pm-code-status" class="tiny" hidden></div>
+                    <div id="pm-code-diffs"></div>
+                    <div id="pm-code-acts" hidden style="display:flex;gap:8px;margin-top:10px">
+                        <button class="btn btn-sm" id="pm-code-accept" style="border-color:#22e39b66;color:#22e39b">✅ Aceptar y subir a GitHub</button>
+                        <button class="btn btn-ghost btn-sm" id="pm-code-reject">✕ Descartar</button>
+                    </div>
                 </div>
 
                 {{-- Chat para ajustar el plan --}}
@@ -519,9 +550,9 @@ function footer(opts){
 
 function resetModal(){
     ['pm-setup','pm-setup-ai','pm-ai-status','pm-setup-repo','pm-stage','pm-phases','pm-log','pm-think',
-     'pm-plan-wrap','pm-chat','pm-generate','pm-regenerate','pm-publish','pm-pushed'].forEach(i => show(i, false));
+     'pm-plan-wrap','pm-code','pm-chat','pm-generate','pm-regenerate','pm-publish','pm-pushed'].forEach(i => show(i, false));
     $id('pm-log').innerHTML = ''; $id('pm-think-body').textContent = '';
-    $id('pm-plan').innerHTML = ''; $id('pm-msgs').innerHTML = '';
+    $id('pm-plan').innerHTML = ''; $id('pm-msgs').innerHTML = ''; $id('pm-code-diffs').innerHTML = '';
     document.querySelectorAll('.pm-phase').forEach(p => p.classList.remove('on','done'));
     PM.raw = ''; PM.streaming = false; PM.forceAiSetup = false; PM.selectedRepo = null; PM.hasPlan = false;
 }
@@ -594,7 +625,8 @@ function renderState(){
         PM.raw = p.plan;
         renderPlan(p.plan);
         show('pm-chat', true); renderChat(p.chat || []);
-        setStage('ok', '<b>Plan listo.</b> Léelo en «📋 Plan de optimización», ajústalo en el chat de abajo o súbelo a GitHub.');
+        resetCodeSection(p);
+        setStage('ok', '<b>Plan listo.</b> Léelo en «📋 Plan de optimización», ajústalo en el chat, propón cambios de código o súbelo a GitHub.');
         const pushed = p.github_pr_url
             ? '🚀 Commiteado' + (p.pushed_at ? ' el ' + p.pushed_at : '') + ' · <a href="' + p.github_pr_url + '" target="_blank" rel="noopener" style="color:#a5b4fc">ver commit</a>'
             : '';
@@ -760,8 +792,9 @@ function startGeneration(){
         PM.hasPlan = true;
         renderPlan(PM.raw);
         setPhase('generando','done'); setPhase('listo','done');
-        setStage('ok', '<b>Plan listo.</b> Léelo en «📋 Plan de optimización», ajústalo en el chat de abajo o súbelo a GitHub.');
+        setStage('ok', '<b>Plan listo.</b> Léelo en «📋 Plan de optimización», ajústalo en el chat, propón cambios de código o súbelo a GitHub.');
         show('pm-chat', true);
+        resetCodeSection(null);
         footer({ regenerate:true, publish: PM.state.github_configured });
         $id('pm-stage').scrollIntoView({behavior:'smooth', block:'center'});
     });
@@ -870,6 +903,82 @@ $id('pm-publish').addEventListener('click', async () => {
     }catch(e){
         showError('No se pudo publicar (' + e.message + ').');
         btn.disabled = false; btn.innerHTML = '🚀 Subir solución a GitHub';
+    }
+});
+
+// ── Cambios de código: proponer → ver diff → aceptar (subir) o rechazar ──────
+function resetCodeSection(plan){
+    show('pm-code', true);
+    $id('pm-code-diffs').innerHTML = ''; show('pm-code-acts', false);
+    const gen = $id('pm-code-gen'); gen.disabled = false; gen.textContent = '🤖 Proponer cambios';
+    const s = $id('pm-code-status');
+    if(plan && plan.code_commit_url){
+        s.hidden = false;
+        s.innerHTML = '<span style="color:#22e39b">✅ Cambios de código ya subidos'
+            + (plan.code_pushed_at ? ' el ' + plan.code_pushed_at : '')
+            + ' · <a href="' + plan.code_commit_url + '" target="_blank" rel="noopener" style="color:#a5b4fc">ver commit</a></span> · puedes proponer más.';
+    } else { s.hidden = true; s.innerHTML = ''; }
+}
+
+$id('pm-code-gen').addEventListener('click', async () => {
+    const s = $id('pm-code-status'); const gen = $id('pm-code-gen');
+    s.hidden = false; s.innerHTML = '<span class="pm-spin"></span> La IA está preparando los cambios de código… (unos segundos)';
+    $id('pm-code-diffs').innerHTML = ''; show('pm-code-acts', false); gen.disabled = true;
+    try{
+        const r = await fetch(planUrl(PM.issueId, '/codigo/proponer'), {method:'POST', headers:jhead});
+        const d = await r.json();
+        if(!d.ok){ s.innerHTML = '⚠️ ' + (d.error || 'No se pudo generar.'); gen.disabled = false; return; }
+        if(!d.count){ s.innerHTML = 'La IA no propuso cambios de código para esta consulta (la mejora es solo el índice).'; gen.disabled = false; return; }
+        s.hidden = true;
+        renderDiffs(d.files);
+        show('pm-code-acts', true);
+        gen.disabled = false; gen.textContent = '🔄 Volver a proponer';
+    }catch(e){ s.innerHTML = '⚠️ No se pudo generar (' + e.message + ').'; gen.disabled = false; }
+});
+
+function renderDiffs(files){
+    const esc = x => (x || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const warnText = { not_found:'El fragmento ya no está en el archivo — se omitirá al subir.',
+        ambiguous:'El fragmento aparece varias veces — se omitirá por seguridad.',
+        no_file:'No se pudo leer el archivo — se omitirá.' };
+    $id('pm-code-diffs').innerHTML = files.map(f =>
+        '<div class="pm-diff-file"><div class="pm-diff-path">📄 ' + esc(f.path) + '</div>'
+        + f.hunks.map(h =>
+            '<div class="pm-diff-hunk">'
+            + (h.explanation ? '<div class="pm-diff-exp">' + esc(h.explanation) + '</div>' : '')
+            + '<pre class="del">' + esc(h.before) + '</pre>'
+            + '<pre class="add">' + esc(h.after) + '</pre>'
+            + (h.status !== 'ok' ? '<div class="pm-diff-warn">⚠️ ' + (warnText[h.status] || 'Revisar.') + '</div>' : '')
+            + '</div>').join('')
+        + '</div>').join('');
+}
+
+$id('pm-code-reject').addEventListener('click', () => {
+    $id('pm-code-diffs').innerHTML = ''; show('pm-code-acts', false);
+    const s = $id('pm-code-status'); s.hidden = false;
+    s.innerHTML = 'Cambios descartados. No se subió nada. Puedes volver a proponer.';
+    $id('pm-code-gen').textContent = '🤖 Proponer cambios';
+});
+
+$id('pm-code-accept').addEventListener('click', async () => {
+    const btn = $id('pm-code-accept'); btn.disabled = true; btn.innerHTML = '<span class="pm-spin"></span> Subiendo…';
+    try{
+        const r = await fetch(planUrl(PM.issueId, '/codigo/aplicar'), {method:'POST', headers:jhead});
+        const d = await r.json();
+        if(d.ok){
+            const s = $id('pm-code-status'); s.hidden = false;
+            s.innerHTML = '<span style="color:#22e39b">✅ ' + d.applied + ' cambio(s) subido(s) a «' + d.branch + '» · '
+                + '<a href="' + d.commit_url + '" target="_blank" rel="noopener" style="color:#a5b4fc">ver commit</a></span>'
+                + ((d.skipped && d.skipped.length) ? '<div class="pm-diff-warn">Omitidos: ' + d.skipped.map(x=>x.replace(/</g,'&lt;')).join(' · ') + '</div>' : '');
+            show('pm-code-acts', false);
+            btn.innerHTML = '✅ Subido';
+        } else {
+            $id('pm-code-status').hidden = false; $id('pm-code-status').innerHTML = '⚠️ ' + (d.error || 'No se pudo subir.');
+            btn.disabled = false; btn.innerHTML = '✅ Aceptar y subir a GitHub';
+        }
+    }catch(e){
+        $id('pm-code-status').hidden = false; $id('pm-code-status').innerHTML = '⚠️ No se pudo subir (' + e.message + ').';
+        btn.disabled = false; btn.innerHTML = '✅ Aceptar y subir a GitHub';
     }
 });
 

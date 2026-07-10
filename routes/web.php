@@ -51,6 +51,8 @@ Route::middleware('dashboard.auth')->prefix('panel')->name('dashboard.')->group(
     Route::get('/servidores/{server}/tablero/{issue}/plan/stream', [PlanController::class, 'stream'])->name('servers.plan.stream');
     Route::post('/servidores/{server}/tablero/{issue}/plan/chat', [PlanController::class, 'chat'])->name('servers.plan.chat');
     Route::post('/servidores/{server}/tablero/{issue}/plan/publicar', [PlanController::class, 'publish'])->name('servers.plan.publish');
+    Route::post('/servidores/{server}/tablero/{issue}/plan/codigo/proponer', [PlanController::class, 'proposeCode'])->name('servers.plan.code.propose');
+    Route::post('/servidores/{server}/tablero/{issue}/plan/codigo/aplicar', [PlanController::class, 'applyCode'])->name('servers.plan.code.apply');
 
     // Conexión con la IA (clave de API o cuenta de Claude por OAuth)
     Route::post('/ia/clave', [PlanController::class, 'saveAiKey'])->name('ai.key');

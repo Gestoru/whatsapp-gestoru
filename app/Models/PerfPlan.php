@@ -14,9 +14,9 @@ class PerfPlan extends Model
 {
     protected $fillable = [
         'perf_issue_id', 'repository_id', 'repository_full_name', 'status',
-        'plan', 'investigation', 'chat', 'model', 'error',
-        'github_branch', 'github_pr_url', 'github_file_url',
-        'generated_at', 'pushed_at',
+        'plan', 'edits', 'investigation', 'chat', 'model', 'error',
+        'github_branch', 'github_pr_url', 'github_file_url', 'code_commit_url',
+        'generated_at', 'pushed_at', 'code_pushed_at',
     ];
 
     protected function casts(): array
@@ -24,8 +24,10 @@ class PerfPlan extends Model
         return [
             'investigation' => 'array',
             'chat'          => 'array',
+            'edits'         => 'array',
             'generated_at'  => 'datetime',
             'pushed_at'     => 'datetime',
+            'code_pushed_at' => 'datetime',
         ];
     }
 
