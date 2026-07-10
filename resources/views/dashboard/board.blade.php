@@ -596,7 +596,7 @@ function renderState(){
         show('pm-chat', true); renderChat(p.chat || []);
         setStage('ok', '<b>Plan listo.</b> Léelo en «📋 Plan de optimización», ajústalo en el chat de abajo o súbelo a GitHub.');
         const pushed = p.github_pr_url
-            ? '🚀 Publicado' + (p.pushed_at ? ' el ' + p.pushed_at : '') + ' · <a href="' + p.github_pr_url + '" target="_blank" rel="noopener" style="color:#a5b4fc">ver pull request</a>'
+            ? '🚀 Commiteado' + (p.pushed_at ? ' el ' + p.pushed_at : '') + ' · <a href="' + p.github_pr_url + '" target="_blank" rel="noopener" style="color:#a5b4fc">ver commit</a>'
             : '';
         footer({ regenerate:true, publish: s.github_configured, pushed });
         return;
@@ -856,14 +856,13 @@ $id('pm-publish').addEventListener('click', async () => {
             headers:{'X-CSRF-TOKEN':CSRF, Accept:'application/json'}});
         const d = await r.json();
         if(d.ok){
-            const extra = d.has_migration ? ' · incluye migración + script listos para ejecutar' : '';
-            $id('pm-pushed').innerHTML = '🚀 Publicado ahora' + extra + ' · <a href="' + d.pr_url
-                + '" target="_blank" rel="noopener" style="color:#a5b4fc">ver pull request</a>';
+            $id('pm-pushed').innerHTML = '🚀 Commit en «' + (d.branch || 'master') + '» · <a href="' + d.commit_url
+                + '" target="_blank" rel="noopener" style="color:#a5b4fc">ver commit</a>';
             show('pm-pushed', true);
             setStage('ok', d.has_migration
-                ? '<b>Solución subida a GitHub.</b> El PR trae la <b>migración</b> (crea el índice con <code>php artisan migrate</code>) y un <b>script .sh</b> idempotente. Ábrelo y revísalo antes de mezclar.'
-                : '<b>Plan subido a GitHub.</b> La IA no propuso un índice auto-aplicable; revisa el plan para los cambios manuales.');
-            btn.innerHTML = '✅ Publicado en GitHub';
+                ? '<b>Solución subida a <code>' + (d.branch || 'master') + '</code> en un commit.</b> Incluye la <b>migración</b> del índice y el <b>script .sh</b>. Al desplegar (tu comando de siempre) se aplica sola.'
+                : '<b>Plan subido a <code>' + (d.branch || 'master') + '</code> en un commit.</b> La IA no propuso un índice auto-aplicable; revisa el plan para los cambios manuales.');
+            btn.innerHTML = '✅ Commiteado';
         } else {
             showError(d.error || 'No se pudo publicar.');
             btn.disabled = false; btn.innerHTML = '🚀 Subir solución a GitHub';

@@ -89,7 +89,7 @@
                                                 <span class="kbadge kbadge-ai">🧠 Plan…</span>
                                             @endif
                                             @if($issue->plan->github_pr_url)
-                                                <a class="kbadge kbadge-pr" href="{{ $issue->plan->github_pr_url }}" target="_blank" rel="noopener">🚀 PR</a>
+                                                <a class="kbadge kbadge-pr" href="{{ $issue->plan->github_pr_url }}" target="_blank" rel="noopener">🚀 En GitHub</a>
                                             @endif
                                         @endif
                                     </div>

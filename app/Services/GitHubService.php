@@ -256,6 +256,77 @@ class GitHubService
     }
 
     /**
+     * Hace UN SOLO commit con varios archivos directamente sobre una rama
+     * (por defecto la principal), sin abrir pull request. Usa la Git Data API
+     * (blobs → tree → commit → ref) para que quede todo en un único commit.
+     *
+     * @param array<string, string> $files  ruta => contenido
+     * @return string URL del commit en GitHub
+     */
+    public function commitFiles(string $fullName, string $branch, array $files, string $message): string
+    {
+        $baseSha = $this->branchSha($fullName, $branch);
+        if (! $baseSha) {
+            throw new \RuntimeException("No se encontró la rama «{$branch}» en {$fullName}.");
+        }
+
+        // Árbol base del último commit.
+        $commit = $this->http()->get("/repos/{$fullName}/git/commits/{$baseSha}");
+        if (! $commit->successful()) {
+            throw new \RuntimeException('GitHub no devolvió el commit base: '.$commit->status());
+        }
+        $baseTree = $commit->json('tree.sha');
+
+        // Un blob por archivo (los .sh quedan ejecutables con modo 100755).
+        $tree = [];
+        foreach ($files as $path => $content) {
+            $blob = $this->http()->post("/repos/{$fullName}/git/blobs", [
+                'content'  => base64_encode($content),
+                'encoding' => 'base64',
+            ]);
+            if (! $blob->successful()) {
+                throw new \RuntimeException('GitHub no aceptó el archivo '.$path.': '.($blob->json('message') ?? $blob->status()));
+            }
+            $tree[] = [
+                'path' => ltrim($path, '/'),
+                'mode' => str_ends_with($path, '.sh') ? '100755' : '100644',
+                'type' => 'blob',
+                'sha'  => $blob->json('sha'),
+            ];
+        }
+
+        $newTree = $this->http()->post("/repos/{$fullName}/git/trees", [
+            'base_tree' => $baseTree,
+            'tree'      => $tree,
+        ]);
+        if (! $newTree->successful()) {
+            throw new \RuntimeException('GitHub no creó el árbol: '.($newTree->json('message') ?? $newTree->status()));
+        }
+
+        $newCommit = $this->http()->post("/repos/{$fullName}/git/commits", [
+            'message' => $message,
+            'tree'    => $newTree->json('sha'),
+            'parents' => [$baseSha],
+        ]);
+        if (! $newCommit->successful()) {
+            throw new \RuntimeException('GitHub no creó el commit: '.($newCommit->json('message') ?? $newCommit->status()));
+        }
+        $newSha = $newCommit->json('sha');
+
+        // Mueve la rama al nuevo commit (falla si la rama está protegida).
+        $ref = $this->http()->patch("/repos/{$fullName}/git/refs/heads/{$branch}", ['sha' => $newSha]);
+        if (! $ref->successful()) {
+            $msg = $ref->json('message') ?? (string) $ref->status();
+            if (str_contains(strtolower($msg), 'protected')) {
+                throw new \RuntimeException("La rama «{$branch}» está protegida en {$fullName}; no puedo commitear directo. Quita la protección o usa el flujo con pull request.");
+            }
+            throw new \RuntimeException('GitHub no movió la rama: '.$msg);
+        }
+
+        return $newCommit->json('html_url') ?? "https://github.com/{$fullName}/commit/{$newSha}";
+    }
+
+    /**
      * Abre un pull request. Si ya existe uno de esa rama, devuelve su URL.
      *
      * @return string URL del pull request

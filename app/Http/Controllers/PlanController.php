@@ -276,7 +276,7 @@ class PlanController extends Controller
         }, 200, $this->sseHeaders());
     }
 
-    /** Publica el plan en GitHub: rama nueva + archivo Markdown + pull request. */
+    /** Sube la solución a GitHub en UN commit directo a la rama principal (sin PR). */
     public function publish(Server $server, PerfIssue $issue)
     {
         abort_unless($issue->server_id === $server->id, 404);
@@ -291,57 +291,40 @@ class PlanController extends Controller
 
         $full = $plan->repository_full_name;
         try {
-            $base   = $plan->investigation['branch'] ?? $this->github->defaultBranch($full);
-            $branch = 'optimizacion/consulta-'.$issue->id;
+            $branch = $this->github->defaultBranch($full);   // master / main
             $ddl    = $this->extractIndexDdl((string) $plan->plan);
 
-            $this->github->createBranch($full, $branch, $base);
-
-            // 1) El documento del plan (siempre).
+            // Todos los archivos en un solo commit directo a la rama principal.
             $docPath = 'docs/optimizaciones/consulta-'.$issue->id.'.md';
-            $fileUrl = $this->github->commitFile(
-                $full, $branch, $docPath, $this->planDocument($issue, $plan),
-                'docs: plan de optimización consulta MySQL #'.$issue->id.' ('.($issue->metrics['db'] ?? 'BD').')'
-            );
+            $files   = [$docPath => $this->planDocument($issue, $plan)];
             $artifacts = [$docPath];
 
-            // 2) Migración + script ejecutable, si la IA propuso un índice.
             if ($ddl) {
                 $migPath = 'database/migrations/'.now()->format('Y_m_d_His').'_optimiza_'.$ddl['table'].'_incidencia_'.$issue->id.'.php';
-                $this->github->commitFile(
-                    $full, $branch, $migPath, $this->buildMigration($ddl, $issue->id),
-                    'feat: migración índice '.$ddl['index'].' para consulta MySQL #'.$issue->id
-                );
-                $shPath = 'scripts/optimizaciones/consulta-'.$issue->id.'.sh';
-                $this->github->commitFile(
-                    $full, $branch, $shPath, $this->buildShellScript($ddl, $issue),
-                    'feat: script idempotente para aplicar el índice de la consulta #'.$issue->id
-                );
-                $artifacts[] = $migPath;
-                $artifacts[] = $shPath;
+                $shPath  = 'scripts/optimizaciones/consulta-'.$issue->id.'.sh';
+                $files[$migPath] = $this->buildMigration($ddl, $issue->id);
+                $files[$shPath]  = $this->buildShellScript($ddl, $issue);
+                $artifacts[]     = $migPath;
+                $artifacts[]     = $shPath;
             }
 
-            $prUrl = $this->github->createPullRequest(
-                $full, $branch, $base,
-                '⚡ Optimización consulta MySQL · '.($issue->metrics['db'] ?? 'BD').' · incidencia #'.$issue->id,
-                $this->prBody($issue, $plan, $ddl, $artifacts)
-            );
+            $commitUrl = $this->github->commitFiles($full, $branch, $files, $this->commitMessage($issue, $ddl));
 
             $plan->update([
                 'github_branch'   => $branch,
-                'github_pr_url'   => $prUrl,
-                'github_file_url' => $fileUrl,
+                'github_pr_url'   => $commitUrl,   // ahora guarda la URL del commit
+                'github_file_url' => 'https://github.com/'.$full.'/blob/'.$branch.'/'.$docPath,
                 'pushed_at'       => now(),
             ]);
-            $issue->logEvent('plan_publicado', 'Plan publicado en GitHub'.($ddl ? ' (con migración + script)' : '').': '.$prUrl);
+            $issue->logEvent('plan_publicado', 'Solución commiteada a «'.$branch.'»'.($ddl ? ' (con migración)' : '').': '.$commitUrl);
 
             return response()->json([
-                'ok' => true, 'pr_url' => $prUrl, 'file_url' => $fileUrl,
-                'branch' => $branch, 'artifacts' => $artifacts, 'has_migration' => (bool) $ddl,
+                'ok' => true, 'commit_url' => $commitUrl, 'branch' => $branch,
+                'artifacts' => $artifacts, 'has_migration' => (bool) $ddl,
             ]);
         } catch (\Throwable $e) {
             report($e);
-            $issue->logEvent('plan_error', 'Falló la publicación en GitHub: '.\Illuminate\Support\Str::limit($e->getMessage(), 160));
+            $issue->logEvent('plan_error', 'Falló el commit a GitHub: '.\Illuminate\Support\Str::limit($e->getMessage(), 160));
 
             return response()->json(['ok' => false, 'error' => $e->getMessage()], 500);
         }
@@ -510,42 +493,13 @@ BASH;
         ]);
     }
 
-    private function prBody(PerfIssue $issue, PerfPlan $plan, ?array $ddl, array $artifacts): string
+    /** Mensaje del commit directo a la rama principal. */
+    private function commitMessage(PerfIssue $issue, ?array $ddl): string
     {
-        $m = $issue->metrics ?? [];
-        $files = collect($plan->investigation['files'] ?? [])->pluck('path')->implode("\n- ");
+        $db = $issue->metrics['db'] ?? 'BD';
 
-        $lines = [
-            'Optimización generada con IA desde el panel de infraestructura.',
-            '',
-            '**Consulta** (BD `'.($m['db'] ?? '—').'`): '.number_format((int) ($m['total_s'] ?? 0)).' s acumulados · '.number_format((int) ($m['execs'] ?? 0)).' ejecuciones · '.($m['avg_ms'] ?? '?').' ms promedio.',
-            '',
-            '### 📦 Qué incluye este PR',
-        ];
-        if ($ddl) {
-            $lines[] = '- ✅ **Migración** `'.$artifacts[1].'` — crea el índice `'.$ddl['index'].'` en `'.$ddl['table'].'` (`'.implode('`, `', $ddl['columns']).'`) de forma idempotente, con `down()` para revertir.';
-            $lines[] = '- 🖥️ **Script** `'.$artifacts[2].'` — *opcional*, para aplicarlo a mano sin esperar al deploy (`bash '.$artifacts[2].'`).';
-            $lines[] = '- 📄 **Plan completo** `'.$artifacts[0].'`.';
-            $lines[] = '';
-            $lines[] = '### ▶️ Cómo aplicar';
-            $lines[] = '1. Revisa y aprueba este PR.';
-            $lines[] = '2. Haz **merge**.';
-            $lines[] = '3. En el próximo **deploy** de esta app, `php artisan migrate` crea el índice solo (idempotente — no rompe si ya existe).';
-            $lines[] = '   · ¿Necesitas aplicarlo **ya**, sin esperar el deploy? Corre `bash '.$artifacts[2].'`.';
-            $lines[] = '4. Para revertir: `php artisan migrate:rollback` (o el `down()` de la migración).';
-            $lines[] = '';
-            $lines[] = '> ⚠️ El índice es el cambio **seguro y automatizable**. Otros ajustes del plan (código, `SELECT *`, posible N+1) son **manuales** — revísalos en el documento antes de mezclar.';
-        } else {
-            $lines[] = '- 📄 **Plan completo** `'.$artifacts[0].'`.';
-            $lines[] = '';
-            $lines[] = '> La IA no propuso un índice auto-aplicable para esta consulta; la solución es de código. Revisa el plan para los pasos manuales.';
-        }
-        $lines[] = '';
-        $lines[] = '**Archivos investigados:**';
-        $lines[] = '- '.($files ?: '—');
-        $lines[] = '';
-        $lines[] = '_Trazabilidad: incidencia #'.$issue->id.' · detectada el '.optional($issue->first_detected_at)->format('d/m/Y H:i').' · '.$issue->reopened_count.' reincidencia(s)._';
-
-        return implode("\n", $lines);
+        return $ddl
+            ? 'perf: índice '.$ddl['index'].' en '.$ddl['table'].' para consulta MySQL lenta ('.$db.') · incidencia #'.$issue->id
+            : 'docs: plan de optimización consulta MySQL ('.$db.') · incidencia #'.$issue->id;
     }
 }
