@@ -239,6 +239,38 @@ log "Compilando configuración, rutas y vistas (producción)…"
 "$PHP_BIN" artisan view:cache >/dev/null 2>&1 || true
 ok "Cachés de producción compiladas"
 
+# ── Despliegue de apps optimizadas (opcional) ───────────────────────────────
+# Si en ESTE servidor tienes otras apps Laravel (p.ej. imp-fase0) a las que el
+# panel le sube optimizaciones (índices/código) a su master, puedes hacer que
+# ESTE MISMO comando también las despliegue. Solo lista sus carpetas (una ruta
+# absoluta por línea) en /root/gestoru-apps.conf. Para cada una se hará:
+#     git pull  →  php artisan migrate --force  →  limpiar cachés.
+# Todo se ejecuta con el usuario dueño de la carpeta (respeta permisos) y de
+# forma tolerante a fallos: si una app falla, se avisa pero NO rompe el panel.
+APPS_CONF="${GESTORU_APPS_CONF:-/root/gestoru-apps.conf}"
+if [ -f "$APPS_CONF" ]; then
+    log "Desplegando apps optimizadas de $APPS_CONF…"
+    while IFS= read -r _line || [ -n "$_line" ]; do
+        app_dir="$(printf '%s' "$_line" | sed 's/#.*//' | xargs)"   # sin comentarios ni espacios
+        [ -z "$app_dir" ] && continue
+        if [ ! -d "$app_dir/.git" ] || [ ! -f "$app_dir/artisan" ]; then
+            log "  · $app_dir: no es una app Laravel con git, se omite."
+            continue
+        fi
+        app_user="$(stat -c %U "$app_dir" 2>/dev/null || echo root)"
+        as_owner(){ if [ "$app_user" != "root" ] && command -v sudo >/dev/null 2>&1; then sudo -u "$app_user" "$@"; else "$@"; fi; }
+        log "  · Actualizando $app_dir (usuario $app_user)…"
+        if as_owner git -C "$app_dir" pull --ff-only >/dev/null 2>&1; then
+            ( cd "$app_dir" && as_owner "$PHP_BIN" artisan migrate --force >/dev/null 2>&1 ) \
+                || log "    ⚠ migrate falló en $app_dir — revísalo a mano"
+            ( cd "$app_dir" && as_owner "$PHP_BIN" artisan optimize:clear >/dev/null 2>&1 ) || true
+            ok "  $app_dir actualizado"
+        else
+            log "    ⚠ git pull falló en $app_dir (¿cambios locales o rama distinta?)"
+        fi
+    done < "$APPS_CONF"
+fi
+
 # ── Muestreo automático de métricas (histórico / Fase 2) ────────────────────
 log "Programando el muestreo automático de métricas (cada 5 min)…"
 cat > /etc/cron.d/gestoru-dashboard <<CRON
