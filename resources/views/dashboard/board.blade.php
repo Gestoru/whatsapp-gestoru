@@ -144,13 +144,20 @@
     .pm-plan pre code{background:none;padding:0}
     .pm-plan ul,.pm-plan ol{padding-left:20px;margin:6px 0}
     .pm-plan blockquote{border-left:3px solid #c084fc66;margin:8px 0;padding:2px 12px;color:var(--muted)}
-    .pm-chat{border-top:1px solid var(--line);margin-top:16px;padding-top:14px}
+    .pm-chat{margin-top:0;padding-top:0}
     .pm-chat-head{font-size:12.5px;font-weight:600;margin-bottom:9px;color:var(--text)}
-    /* Cambios de código (diff antes/después) */
-    .pm-code{border-top:1px solid var(--line);margin-top:16px;padding-top:14px}
-    .pm-code-head{display:flex;align-items:center;gap:10px;margin-bottom:4px}
-    .pm-code-head span{font-weight:600;font-size:12.5px;flex:1}
-    #pm-code-status{margin:6px 0;line-height:1.5}
+    /* Acciones agrupadas del plan (1 · 2 · 3) */
+    .pm-actions-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+        color:var(--muted2);margin:18px 0 10px}
+    .pm-act{background:#0a1024;border:1px solid var(--line);border-radius:12px;padding:13px 15px;margin-bottom:10px}
+    .pm-act-h{display:flex;align-items:center;gap:9px;font-size:13px;list-style:none}
+    .pm-act-h::-webkit-details-marker{display:none}
+    .pm-act-tag{font-size:10px;color:var(--muted2);border:1px solid var(--line);border-radius:6px;padding:1px 7px;margin-left:auto}
+    .pm-act-p{font-size:12px;color:var(--muted);line-height:1.55;margin:8px 0 11px}
+    .pm-act-done{font-size:12px;color:#22e39b;margin-bottom:10px}
+    .pm-act-chat > summary{cursor:pointer}
+    .pm-act-chat[open] > summary{margin-bottom:12px}
+    #pm-code-status{margin:8px 0;line-height:1.5}
     .pm-diff-file{border:1px solid var(--line);border-radius:10px;margin-bottom:10px;overflow:hidden}
     .pm-diff-path{background:#0e1836;padding:7px 12px;font-family:ui-monospace,monospace;font-size:11.5px;
         color:#c4b5fd;border-bottom:1px solid var(--line);word-break:break-all}
@@ -309,43 +316,58 @@
                     <pre id="pm-think-body"></pre>
                 </details>
 
+                {{-- READY: un solo botón para generar el plan --}}
+                <div id="pm-ready" hidden style="text-align:center;padding:6px 0 2px">
+                    <button class="btn" id="pm-generate" style="border-color:#c084fc66;color:#c084fc;font-size:13.5px;padding:9px 18px">🧠 Generar plan de optimización</button>
+                </div>
+
                 {{-- Panel del plan (con título claro para que se sepa qué leer) --}}
                 <div class="pm-plan-wrap" id="pm-plan-wrap" hidden>
                     <div class="pm-plan-head">📋 Plan de optimización</div>
                     <div class="pm-plan" id="pm-plan"></div>
                 </div>
 
-                {{-- Cambios de código: la IA propone, tú ves el diff y aceptas o rechazas --}}
-                <div class="pm-code" id="pm-code" hidden>
-                    <div class="pm-code-head">
-                        <span>🛠️ Cambios de código</span>
-                        <button class="btn btn-sm" id="pm-code-gen">🤖 Proponer cambios</button>
-                    </div>
-                    <p class="tiny muted" style="margin:0 0 8px">La IA propone las ediciones en los archivos del repo; revisa el antes/después y acepta para subirlas, o recházalas. (El índice va aparte, con el botón de abajo.)</p>
-                    <div id="pm-code-status" class="tiny" hidden></div>
-                    <div id="pm-code-diffs"></div>
-                    <div id="pm-code-acts" hidden style="display:flex;gap:8px;margin-top:10px">
-                        <button class="btn btn-sm" id="pm-code-accept" style="border-color:#22e39b66;color:#22e39b">✅ Aceptar y subir a GitHub</button>
-                        <button class="btn btn-ghost btn-sm" id="pm-code-reject">✕ Descartar</button>
-                    </div>
-                </div>
+                {{-- DONE: acciones agrupadas y ordenadas (1 · 2 · 3) --}}
+                <div id="pm-actions" hidden>
+                    <div class="pm-actions-title">¿Qué quieres hacer con el plan?</div>
 
-                {{-- Chat para ajustar el plan --}}
-                <div class="pm-chat" id="pm-chat" hidden>
-                    <div class="pm-chat-head">💬 ¿Quieres ajustar algo? Escríbele a la IA</div>
-                    <div class="pm-msgs" id="pm-msgs"></div>
-                    <div class="pm-input">
-                        <textarea id="pm-msg" placeholder="Ej.: agrega el SQL para revertir el índice, o explícame el paso 2…"></textarea>
-                        <button class="btn btn-sm" id="pm-send">Enviar</button>
+                    {{-- 1) Índice (base de datos) --}}
+                    <div class="pm-act">
+                        <div class="pm-act-h"><b>1 · 🗄️ Aplicar el índice</b><span class="pm-act-tag">base de datos</span></div>
+                        <p class="pm-act-p">Sube a GitHub la <b>migración</b> + el script del índice (el cambio principal y seguro). Al desplegar esa app, se aplica solo.</p>
+                        <div id="pm-idx-done" class="pm-act-done" hidden></div>
+                        <button class="btn btn-sm" id="pm-publish" style="border-color:#22e39b66;color:#22e39b">🚀 Subir índice a GitHub</button>
+                    </div>
+
+                    {{-- 2) Código (opcional, con revisión de diff) --}}
+                    <div class="pm-act">
+                        <div class="pm-act-h"><b>2 · 🛠️ Cambios de código</b><span class="pm-act-tag">opcional</span></div>
+                        <p class="pm-act-p">La IA propone las ediciones en el repo; revisas el <b>antes/después</b> y decides. Nada se sube sin tu aceptación.</p>
+                        <div id="pm-code-status" class="tiny" hidden></div>
+                        <div id="pm-code-diffs"></div>
+                        <div id="pm-code-acts" hidden style="display:flex;gap:8px;margin:10px 0 0">
+                            <button class="btn btn-sm" id="pm-code-accept" style="border-color:#22e39b66;color:#22e39b">✅ Aceptar y subir</button>
+                            <button class="btn btn-ghost btn-sm" id="pm-code-reject">✕ Descartar</button>
+                        </div>
+                        <button class="btn btn-sm" id="pm-code-gen">🤖 Proponer cambios de código</button>
+                    </div>
+
+                    {{-- 3) Ajustar con la IA (chat plegable) --}}
+                    <details class="pm-act pm-act-chat">
+                        <summary class="pm-act-h"><b>3 · 💬 Ajustar el plan con la IA</b><span class="pm-act-tag">chat</span></summary>
+                        <div class="pm-chat" id="pm-chat">
+                            <div class="pm-msgs" id="pm-msgs"></div>
+                            <div class="pm-input">
+                                <textarea id="pm-msg" placeholder="Ej.: usa estas columnas en el índice, o explícame el paso 2…"></textarea>
+                                <button class="btn btn-sm" id="pm-send">Enviar</button>
+                            </div>
+                        </div>
+                    </details>
+
+                    <div style="text-align:center;margin-top:12px">
+                        <a href="#" id="pm-regenerate" class="tiny" style="color:var(--muted)">🔄 Regenerar el plan desde cero</a>
                     </div>
                 </div>
-            </div>
-            <div class="pm-foot">
-                <button class="btn btn-ghost btn-sm" id="pm-regenerate" hidden>🔄 Regenerar</button>
-                <span style="flex:1"></span>
-                <span class="tiny muted" id="pm-pushed" hidden></span>
-                <button class="btn btn-sm" id="pm-generate" hidden style="border-color:#c084fc66;color:#c084fc">🧠 Generar plan de optimización</button>
-                <button class="btn btn-sm" id="pm-publish" hidden style="border-color:#22e39b66;color:#22e39b">🚀 Subir solución a GitHub</button>
             </div>
         </div>
     </div>
@@ -535,24 +557,36 @@ function setStage(kind, html){
     el.hidden = false;
 }
 function hideStage(){ $id('pm-stage').hidden = true; }
-// showError = banner de error + volver a ofrecer «Generar»
-function showError(msg){ setStage('error', msg); footer({generate:true}); }
 
-// Botones del pie según el estado (uno principal a la vez)
-function footer(opts){
-    show('pm-generate',   !!opts.generate);
-    show('pm-regenerate', !!opts.regenerate);
-    show('pm-publish',    !!opts.publish);
-    const gen = $id('pm-generate'); gen.disabled = false; gen.innerHTML = PM.hasPlan ? '🔁 Reintentar' : '🧠 Generar plan de optimización';
-    if(opts.pushed){ $id('pm-pushed').innerHTML = opts.pushed; show('pm-pushed', true); }
-    else show('pm-pushed', false);
+// Dos zonas de acción, nunca a la vez:
+//  · pm-ready   → un solo botón «Generar» (sin plan, o tras un error).
+//  · pm-actions → acciones agrupadas 1·2·3 (cuando ya hay plan).
+function showReady(on){ show('pm-ready', on); if(on) $id('pm-generate').disabled = false; }
+function showActions(on){ show('pm-actions', on); }
+// showError = banner de error + volver a ofrecer «Generar»
+function showError(msg){ setStage('error', msg); showActions(false); showReady(true); $id('pm-generate').innerHTML = '🔁 Reintentar'; }
+
+// Estado del botón/nota del índice (paso 1) según si ya se subió.
+function renderIdxDone(plan){
+    const done = $id('pm-idx-done'); const btn = $id('pm-publish');
+    btn.disabled = false;
+    if(plan && plan.github_pr_url){
+        done.hidden = false;
+        done.innerHTML = '✅ Índice subido' + (plan.pushed_at ? ' el ' + plan.pushed_at : '')
+            + ' · <a href="' + plan.github_pr_url + '" target="_blank" rel="noopener" style="color:#a5b4fc">ver commit</a>';
+        btn.innerHTML = '🔄 Volver a subir';
+    } else {
+        done.hidden = true; done.innerHTML = '';
+        btn.innerHTML = '🚀 Subir índice a GitHub';
+    }
 }
 
 function resetModal(){
     ['pm-setup','pm-setup-ai','pm-ai-status','pm-setup-repo','pm-stage','pm-phases','pm-log','pm-think',
-     'pm-plan-wrap','pm-code','pm-chat','pm-generate','pm-regenerate','pm-publish','pm-pushed'].forEach(i => show(i, false));
+     'pm-plan-wrap','pm-ready','pm-actions'].forEach(i => show(i, false));
     $id('pm-log').innerHTML = ''; $id('pm-think-body').textContent = '';
     $id('pm-plan').innerHTML = ''; $id('pm-msgs').innerHTML = ''; $id('pm-code-diffs').innerHTML = '';
+    $id('pm-generate').innerHTML = '🧠 Generar plan de optimización';
     document.querySelectorAll('.pm-phase').forEach(p => p.classList.remove('on','done'));
     PM.raw = ''; PM.streaming = false; PM.forceAiSetup = false; PM.selectedRepo = null; PM.hasPlan = false;
 }
@@ -597,7 +631,7 @@ function renderState(){
     PM.hasPlan = !!(p && p.status === 'listo' && p.plan && p.plan.trim());
 
     // Zonas dinámicas siempre limpias antes de decidir el estado
-    ['pm-phases','pm-log','pm-think','pm-plan-wrap','pm-chat'].forEach(i => show(i, false));
+    ['pm-phases','pm-log','pm-think','pm-plan-wrap','pm-ready','pm-actions'].forEach(i => show(i, false));
 
     // ── Estado SETUP: falta conectar IA o mapear el repositorio ──────────────
     const showAiSetup = !aiOk || PM.forceAiSetup;
@@ -610,13 +644,11 @@ function renderState(){
     if(aiOk && !PM.forceAiSetup && repoOk) renderConn(s);
 
     if(!aiOk || PM.forceAiSetup){
-        setStage('info', 'Primero <b>conecta la IA</b> aquí arriba: elige «🔑 Clave de API» o «👤 Cuenta de Claude».');
-        footer({});
+        setStage('info', 'Paso 1: <b>conecta la IA</b> aquí arriba (elige «🔑 Clave de API» o «👤 Cuenta de Claude»).');
         return;
     }
     if(!repoOk){
-        setStage('info', 'Ahora <b>elige el proyecto de GitHub</b> al que pertenece esta consulta (arriba). Solo se pide una vez por base de datos.');
-        footer({});
+        setStage('info', 'Paso 2: <b>elige el proyecto de GitHub</b> de esta consulta (arriba). Solo se pide una vez por base de datos.');
         return;
     }
 
@@ -624,23 +656,22 @@ function renderState(){
     if(PM.hasPlan){
         PM.raw = p.plan;
         renderPlan(p.plan);
-        show('pm-chat', true); renderChat(p.chat || []);
+        renderChat(p.chat || []);
         resetCodeSection(p);
-        setStage('ok', '<b>Plan listo.</b> Léelo en «📋 Plan de optimización», ajústalo en el chat, propón cambios de código o súbelo a GitHub.');
-        const pushed = p.github_pr_url
-            ? '🚀 Commiteado' + (p.pushed_at ? ' el ' + p.pushed_at : '') + ' · <a href="' + p.github_pr_url + '" target="_blank" rel="noopener" style="color:#a5b4fc">ver commit</a>'
-            : '';
-        footer({ regenerate:true, publish: s.github_configured, pushed });
+        renderIdxDone(p);
+        setStage('ok', '<b>Plan listo.</b> Léelo abajo en «📋 Plan de optimización» y, cuando quieras, elige una acción.');
+        showActions(true);
         return;
     }
 
     // ── Estado READY / ERROR: listo para generar ─────────────────────────────
     if(p && p.status === 'error' && p.error){
         setStage('error', 'El último intento falló: ' + p.error);
+        $id('pm-generate').innerHTML = '🔁 Reintentar';
     } else {
-        setStage('ready', 'Todo listo. Pulsa <b>«🧠 Generar plan de optimización»</b>: la IA investigará el código en GitHub y lo escribirá aquí en vivo.');
+        setStage('ready', 'Todo listo. Pulsa <b>«Generar plan de optimización»</b>: la IA investigará el código en GitHub y lo escribirá aquí en vivo.');
     }
-    footer({ generate:true });
+    showReady(true);
 }
 
 // ── Conexión de IA: selector de modo (clave de API / cuenta de Claude) ───────
@@ -750,9 +781,10 @@ $id('pm-repo-save').addEventListener('click', async () => {
 $id('pm-generate').addEventListener('click', startGeneration);
 $id('pm-regenerate').addEventListener('click', startGeneration);
 
-function startGeneration(){
+function startGeneration(e){
+    if(e && e.preventDefault) e.preventDefault();
     show('pm-setup', false);
-    footer({});                       // sin botones mientras genera
+    showReady(false); showActions(false);   // sin acciones mientras genera
     $id('pm-plan').innerHTML = ''; $id('pm-log').innerHTML = ''; $id('pm-think-body').textContent = '';
     ['pm-phases','pm-log','pm-plan-wrap'].forEach(i => show(i, true));
     setPhase('repo','done'); setPhase('investigando','on');
@@ -792,10 +824,11 @@ function startGeneration(){
         PM.hasPlan = true;
         renderPlan(PM.raw);
         setPhase('generando','done'); setPhase('listo','done');
-        setStage('ok', '<b>Plan listo.</b> Léelo en «📋 Plan de optimización», ajústalo en el chat, propón cambios de código o súbelo a GitHub.');
-        show('pm-chat', true);
+        setStage('ok', '<b>Plan listo.</b> Léelo abajo en «📋 Plan de optimización» y, cuando quieras, elige una acción.');
+        renderChat(PM.state.plan && PM.state.plan.chat ? PM.state.plan.chat : []);
         resetCodeSection(null);
-        footer({ regenerate:true, publish: PM.state.github_configured });
+        renderIdxDone(null);
+        showActions(true);
         $id('pm-stage').scrollIntoView({behavior:'smooth', block:'center'});
     });
     es.addEventListener('error', e => {
@@ -880,37 +913,34 @@ async function sendChat(){
     PM.streaming = false;
 }
 
-// ── Subir la solución a GitHub (rama + archivo + pull request) ──────────────
+// ── Paso 1: subir el índice a GitHub (migración + script) ────────────────────
 $id('pm-publish').addEventListener('click', async () => {
-    const btn = $id('pm-publish');
-    btn.disabled = true; btn.innerHTML = '<span class="pm-spin"></span> Publicando…';
+    const btn = $id('pm-publish'); const done = $id('pm-idx-done');
+    btn.disabled = true; btn.innerHTML = '<span class="pm-spin"></span> Subiendo…';
     try{
         const r = await fetch(planUrl(PM.issueId, '/publicar'), {method:'POST',
             headers:{'X-CSRF-TOKEN':CSRF, Accept:'application/json'}});
         const d = await r.json();
         if(d.ok){
-            $id('pm-pushed').innerHTML = '🚀 Commit en «' + (d.branch || 'master') + '» · <a href="' + d.commit_url
-                + '" target="_blank" rel="noopener" style="color:#a5b4fc">ver commit</a>';
-            show('pm-pushed', true);
-            setStage('ok', d.has_migration
-                ? '<b>Solución subida a <code>' + (d.branch || 'master') + '</code> en un commit.</b> Incluye la <b>migración</b> del índice y el <b>script .sh</b>. Al desplegar (tu comando de siempre) se aplica sola.'
-                : '<b>Plan subido a <code>' + (d.branch || 'master') + '</code> en un commit.</b> La IA no propuso un índice auto-aplicable; revisa el plan para los cambios manuales.');
-            btn.innerHTML = '✅ Commiteado';
+            done.hidden = false;
+            done.innerHTML = '<span style="color:#22e39b">✅ Índice subido a «' + (d.branch || 'master') + '» · '
+                + '<a href="' + d.commit_url + '" target="_blank" rel="noopener" style="color:#a5b4fc">ver commit</a></span>'
+                + (d.has_migration ? ' — incluye migración + script.' : ' <span class="pm-diff-warn">(sin índice auto-aplicable; revisa el plan)</span>');
+            btn.innerHTML = '🔄 Volver a subir'; btn.disabled = false;
         } else {
-            showError(d.error || 'No se pudo publicar.');
-            btn.disabled = false; btn.innerHTML = '🚀 Subir solución a GitHub';
+            done.hidden = false; done.innerHTML = '<span style="color:#fca5a5">⚠️ ' + (d.error || 'No se pudo subir.') + '</span>';
+            btn.disabled = false; btn.innerHTML = '🚀 Subir índice a GitHub';
         }
     }catch(e){
-        showError('No se pudo publicar (' + e.message + ').');
-        btn.disabled = false; btn.innerHTML = '🚀 Subir solución a GitHub';
+        done.hidden = false; done.innerHTML = '<span style="color:#fca5a5">⚠️ No se pudo subir (' + e.message + ').</span>';
+        btn.disabled = false; btn.innerHTML = '🚀 Subir índice a GitHub';
     }
 });
 
-// ── Cambios de código: proponer → ver diff → aceptar (subir) o rechazar ──────
+// ── Paso 2: cambios de código — proponer → ver diff → aceptar o rechazar ─────
 function resetCodeSection(plan){
-    show('pm-code', true);
     $id('pm-code-diffs').innerHTML = ''; show('pm-code-acts', false);
-    const gen = $id('pm-code-gen'); gen.disabled = false; gen.textContent = '🤖 Proponer cambios';
+    const gen = $id('pm-code-gen'); gen.disabled = false; gen.textContent = '🤖 Proponer cambios de código';
     const s = $id('pm-code-status');
     if(plan && plan.code_commit_url){
         s.hidden = false;
@@ -957,7 +987,7 @@ $id('pm-code-reject').addEventListener('click', () => {
     $id('pm-code-diffs').innerHTML = ''; show('pm-code-acts', false);
     const s = $id('pm-code-status'); s.hidden = false;
     s.innerHTML = 'Cambios descartados. No se subió nada. Puedes volver a proponer.';
-    $id('pm-code-gen').textContent = '🤖 Proponer cambios';
+    $id('pm-code-gen').textContent = '🤖 Proponer cambios de código';
 });
 
 $id('pm-code-accept').addEventListener('click', async () => {
