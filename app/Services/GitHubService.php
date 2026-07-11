@@ -175,6 +175,37 @@ class GitHubService
         return $paths;
     }
 
+    /**
+     * Busca en el CONTENIDO del repo los archivos que mencionan un término
+     * (p.ej. el nombre de una tabla), para encontrar el controlador/modelo que
+     * genera una consulta aunque su nombre de archivo no lo delate.
+     *
+     * @return array<int, string> rutas de archivos
+     */
+    public function searchCode(string $fullName, string $term, int $limit = 8): array
+    {
+        try {
+            $r = $this->http()->get('/search/code', [
+                'q'        => '"'.$term.'" repo:'.$fullName,
+                'per_page' => $limit,
+            ]);
+        } catch (\Throwable) {
+            return [];
+        }
+        if (! $r->successful()) {
+            return [];
+        }
+
+        $paths = [];
+        foreach ((array) $r->json('items') as $item) {
+            if (! empty($item['path'])) {
+                $paths[] = $item['path'];
+            }
+        }
+
+        return $paths;
+    }
+
     /** Contenido de un archivo del repo (decodificado). null si no existe o es muy grande. */
     public function fileContent(string $fullName, string $path, ?string $branch = null): ?string
     {

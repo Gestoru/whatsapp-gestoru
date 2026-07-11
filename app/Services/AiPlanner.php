@@ -29,7 +29,7 @@ class AiPlanner
     public const MODE_SETTING  = 'ai_auth_mode';   // api_key | oauth
 
     /** Máximo de archivos del repo que se incluyen en el contexto de la IA. */
-    private const MAX_FILES = 8;
+    private const MAX_FILES = 12;
 
     /** Máximo de caracteres por archivo (para no desbordar el contexto). */
     private const MAX_FILE_CHARS = 7000;
@@ -187,7 +187,40 @@ class AiPlanner
         $paths = $this->github->tree($repo->full_name, $branch);
         $emit('paso', 'Repositorio con '.number_format(count($paths)).' archivos. Buscando los relacionados…');
 
-        $candidates = $this->rankPaths($paths, $tables);
+        $rank = $this->rankPaths($paths, $tables);
+
+        // Además, busca por CONTENIDO los archivos que mencionan las tablas: así
+        // encontramos el controlador/modelo/servicio que arma la consulta aunque
+        // su nombre de archivo no contenga el de la tabla.
+        $emit('paso', 'Buscando en el código los archivos que usan esas tablas…');
+        $hits = [];
+        foreach (array_slice($tables, 0, 4) as $t) {
+            if (strlen($t) < 4) {
+                continue;
+            }
+            foreach ($this->github->searchCode($repo->full_name, $t) as $p) {
+                $lp = strtolower($p);
+                if (str_contains($lp, 'vendor/') || str_contains($lp, 'node_modules/') || str_contains($lp, 'storage/')) {
+                    continue;
+                }
+                if (! preg_match('/\.(php|js|ts|py|rb|go|java)$/', $lp)) {
+                    continue;
+                }
+                $hits[$p] = ($hits[$p] ?? 0) + 1;
+            }
+        }
+        arsort($hits);   // los que mencionan MÁS tablas, primero
+        if ($hits) {
+            $emit('paso', 'Encontrados '.count($hits).' archivo(s) de código que usan esas tablas.');
+        }
+
+        // Une búsqueda-por-contenido + ranking-por-ruta y pone el CÓDIGO real
+        // (controladores/modelos/servicios) por delante de las migraciones.
+        $merged = array_values(array_unique(array_merge(array_keys($hits), $rank)));
+        $code = array_values(array_filter($merged, fn ($p) => ! str_contains(strtolower($p), 'migration')));
+        $migs = array_values(array_filter($merged, fn ($p) => str_contains(strtolower($p), 'migration')));
+        $candidates = array_merge($code, $migs);
+
         $files = [];
         $contents = [];
         foreach (array_slice($candidates, 0, self::MAX_FILES) as $path) {
@@ -208,14 +241,18 @@ class AiPlanner
         return ['tables' => $tables, 'files' => $files, 'contents' => $contents, 'branch' => $branch];
     }
 
-    /** Extrae los nombres de tabla de una consulta SQL (FROM/JOIN/UPDATE/INTO). */
+    /** Extrae los nombres de tabla de una consulta SQL (FROM/JOIN/UPDATE/INTO + `tabla`.`col`). */
     public function tablesFromSql(string $sql): array
     {
-        preg_match_all('/\b(?:from|join|update|into)\s+`?([a-z0-9_]+)`?/i', $sql, $m);
-        $tables = array_values(array_unique(array_map('strtolower', $m[1] ?? [])));
+        preg_match_all('/\b(?:from|join|update|into)\s+`?([a-z0-9_]+)`?/i', $sql, $m1);
+        // Tablas calificadas «`tabla`.`columna`» (mín. 4 letras: descarta alias c/v/gef)
+        preg_match_all('/`([a-z0-9_]{4,})`\s*\.\s*`/i', $sql, $m2);
 
-        // Palabras que no son tablas (aparecen tras FROM en funciones, etc.)
-        return array_values(array_diff($tables, ['select', 'dual', 'unix_timestamp', 'values']));
+        $tables = array_values(array_unique(array_map('strtolower', array_merge($m1[1] ?? [], $m2[1] ?? []))));
+
+        $stop = ['select', 'dual', 'unix_timestamp', 'values', 'aggregate', 'case', 'when', 'then', 'else', 'exists', 'from', 'where', 'order'];
+
+        return array_values(array_diff($tables, $stop));
     }
 
     /**
