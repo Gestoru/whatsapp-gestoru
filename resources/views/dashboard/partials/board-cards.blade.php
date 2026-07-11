@@ -97,7 +97,7 @@
 
                                 {{-- Acciones --}}
                                 <div class="kacts">
-                                    @if($isMysql && in_array($issue->status, ['por_revisar','planeando'], true))
+                                    @if(in_array($issue->status, ['por_revisar','planeando'], true))
                                         <button class="kact-plan" data-plan="{{ $issue->id }}">{{ $issue->plan && $issue->plan->status === 'listo' ? '📋 Plan' : '🧠 Planear' }}</button>
                                     @endif
                                     @foreach($actions[$issue->status] ?? [] as [$st,$al])

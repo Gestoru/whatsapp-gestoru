@@ -126,29 +126,48 @@ class AiPlanner
 
     // ── Mapeo consulta → repositorio (por base de datos) ─────────────────────
 
-    /** Repositorio mapeado para la base de datos de la incidencia (si existe). */
+    /** Repositorio mapeado para la incidencia (por BD si es MySQL, por contenedor si es CPU). */
     public function repoFor(PerfIssue $issue): ?Repository
     {
-        $db = $this->dbOf($issue);
-        if ($db === null) {
+        $key = $this->mapKey($issue);
+        if ($key === null) {
             return null;
         }
         $map = $this->repoMap();
-        $id = $map[$db] ?? null;
+        $id = $map[$key] ?? null;
+
+        // Compatibilidad: mapeos antiguos guardados con la BD como clave plana.
+        if ($id === null && $issue->kind === 'mysql_query') {
+            $db = $issue->metrics['db'] ?? null;
+            $id = $db ? ($map[$db] ?? null) : null;
+        }
 
         return $id ? Repository::find($id) : null;
     }
 
-    /** Guarda el mapeo «esta base de datos pertenece a este repositorio». */
+    /** Guarda el mapeo «este origen (BD/contenedor) pertenece a este repositorio». */
     public function mapRepo(PerfIssue $issue, Repository $repo): void
     {
-        $db = $this->dbOf($issue);
-        if ($db === null) {
+        $key = $this->mapKey($issue);
+        if ($key === null) {
             return;
         }
         $map = $this->repoMap();
-        $map[$db] = $repo->id;
+        $map[$key] = $repo->id;
         Setting::put('db_repo_map', json_encode($map));
+    }
+
+    /** Clave de mapeo: por base de datos (MySQL) o por contenedor/servidor (CPU). */
+    private function mapKey(PerfIssue $issue): ?string
+    {
+        if ($issue->kind === 'mysql_query') {
+            $db = $issue->metrics['db'] ?? null;
+
+            return (is_string($db) && $db !== '') ? 'db:'.$db : null;
+        }
+        $c = $issue->metrics['contenedor'] ?? $issue->metrics['culpable'] ?? null;
+
+        return (is_string($c) && $c !== '') ? 'cont:'.$c : 'srv:'.$issue->server_id;
     }
 
     public function dbOf(PerfIssue $issue): ?string
@@ -156,6 +175,17 @@ class AiPlanner
         $db = $issue->metrics['db'] ?? null;
 
         return is_string($db) && $db !== '' ? $db : null;
+    }
+
+    /** Texto legible del «origen» de la incidencia, para el modal de mapeo. */
+    public function subjectText(PerfIssue $issue): string
+    {
+        if ($issue->kind === 'mysql_query') {
+            return 'la base de datos «'.($issue->metrics['db'] ?? '—').'»';
+        }
+        $c = $issue->metrics['contenedor'] ?? $issue->metrics['culpable'] ?? null;
+
+        return $c ? 'el contenedor «'.$c.'»' : 'este servidor';
     }
 
     /** @return array<string, int> base de datos → id del repositorio */
@@ -178,23 +208,32 @@ class AiPlanner
      */
     public function investigate(PerfIssue $issue, Repository $repo, callable $emit): array
     {
-        $query  = (string) ($issue->metrics['query'] ?? '');
-        $tables = $this->tablesFromSql($query);
-        $emit('paso', 'Tablas detectadas en la consulta: '.($tables ? implode(', ', $tables) : 'ninguna reconocible'));
+        $terms = $this->searchTerms($issue);
+        $emit('paso', ($issue->kind === 'mysql_query'
+            ? 'Tablas detectadas en la consulta: '
+            : 'Pistas para investigar (contenedor/proceso): ').($terms ? implode(', ', $terms) : '—'));
 
         $branch = $repo->default_branch ?: $this->github->defaultBranch($repo->full_name);
         $emit('paso', "Descargando el árbol de archivos de {$repo->full_name} (rama {$branch})…");
         $paths = $this->github->tree($repo->full_name, $branch);
         $emit('paso', 'Repositorio con '.number_format(count($paths)).' archivos. Buscando los relacionados…');
 
-        $rank = $this->rankPaths($paths, $tables);
+        $rank = $this->rankPaths($paths, $terms);
 
-        // Además, busca por CONTENIDO los archivos que mencionan las tablas: así
-        // encontramos el controlador/modelo/servicio que arma la consulta aunque
-        // su nombre de archivo no contenga el de la tabla.
-        $emit('paso', 'Buscando en el código los archivos que usan esas tablas…');
+        // En picos de CPU, prioriza los archivos de infraestructura (donde se
+        // ponen límites de CPU, workers, config del servidor de aplicación).
+        if ($issue->kind !== 'mysql_query') {
+            $infra = array_values(array_filter($paths, fn ($p) => preg_match('#(docker-compose|dockerfile|caddyfile|procfile|supervisor|\.env\.example)#i', $p)
+                && ! str_contains(strtolower($p), 'vendor/') && ! str_contains(strtolower($p), 'node_modules/')));
+            $rank = array_values(array_unique(array_merge($infra, $rank)));
+        }
+
+        // Además, busca por CONTENIDO los archivos que mencionan cada pista: así
+        // encontramos el controlador/modelo/servicio (o la config) responsable
+        // aunque su nombre de archivo no lo delate.
+        $emit('paso', 'Buscando en el código los archivos relacionados…');
         $hits = [];
-        foreach (array_slice($tables, 0, 4) as $t) {
+        foreach (array_slice($terms, 0, 4) as $t) {
             if (strlen($t) < 4) {
                 continue;
             }
@@ -209,9 +248,9 @@ class AiPlanner
                 $hits[$p] = ($hits[$p] ?? 0) + 1;
             }
         }
-        arsort($hits);   // los que mencionan MÁS tablas, primero
+        arsort($hits);   // los que mencionan MÁS pistas, primero
         if ($hits) {
-            $emit('paso', 'Encontrados '.count($hits).' archivo(s) de código que usan esas tablas.');
+            $emit('paso', 'Encontrados '.count($hits).' archivo(s) de código relacionados.');
         }
 
         // Une búsqueda-por-contenido + ranking-por-ruta y pone el CÓDIGO real
@@ -238,7 +277,37 @@ class AiPlanner
 
         $emit('paso', 'Investigación terminada: '.count($files).' archivo(s) leído(s).');
 
-        return ['tables' => $tables, 'files' => $files, 'contents' => $contents, 'branch' => $branch];
+        return ['tables' => $terms, 'files' => $files, 'contents' => $contents, 'branch' => $branch];
+    }
+
+    /**
+     * Pistas para buscar en el repo según el tipo de incidencia: tablas (MySQL)
+     * o nombre de contenedor/proceso (pico de CPU).
+     *
+     * @return array<int, string>
+     */
+    private function searchTerms(PerfIssue $issue): array
+    {
+        if ($issue->kind === 'mysql_query') {
+            return $this->tablesFromSql((string) ($issue->metrics['query'] ?? ''));
+        }
+        $m = $issue->metrics ?? [];
+        $raw = [
+            $m['contenedor'] ?? '',
+            basename(trim((string) preg_split('/\s+/', trim((string) ($m['proceso'] ?? '')))[0])),
+            $m['culpable'] ?? '',
+        ];
+        $terms = [];
+        foreach ($raw as $t) {
+            $t = trim((string) $t);
+            // Quita sufijos de contenedor tipo «-app-1» para buscar el servicio real.
+            $t = preg_replace('/-\d+$/', '', $t);
+            if (strlen($t) >= 3) {
+                $terms[] = $t;
+            }
+        }
+
+        return array_values(array_unique($terms));
     }
 
     /** Extrae los nombres de tabla de una consulta SQL (FROM/JOIN/UPDATE/INTO + `tabla`.`col`). */
@@ -524,7 +593,15 @@ class AiPlanner
         ]);
     }
 
+    /** Arma el prompt del plan según el tipo de incidencia. */
     private function planPrompt(PerfIssue $issue, Repository $repo, array $inv): string
+    {
+        return $issue->kind === 'mysql_query'
+            ? $this->planPromptMysql($issue, $repo, $inv)
+            : $this->planPromptCpu($issue, $repo, $inv);
+    }
+
+    private function planPromptMysql(PerfIssue $issue, Repository $repo, array $inv): string
     {
         $m = $issue->metrics ?? [];
         $parts = [
@@ -592,6 +669,67 @@ class AiPlanner
             '```',
             '',
             'Si de verdad NO aplica un índice (la solución es solo de código), escribe en esa sección exactamente «Sin índice aplicable» y explica por qué en una frase.',
+        ]);
+
+        return implode("\n", $parts);
+    }
+
+    private function planPromptCpu(PerfIssue $issue, Repository $repo, array $inv): string
+    {
+        $m = $issue->metrics ?? [];
+        $server = $issue->server;
+        $parts = [
+            'Genera un PLAN en Markdown para resolver este PICO DE CPU recurrente en un servidor de producción.',
+            '',
+            '## Incidencia detectada por el panel (pico de CPU)',
+            '- Servidor: '.($server->name ?? '—').' ('.($server->host ?? '—').')',
+            '- Contenedor Docker: '.($m['contenedor'] ?? '—'),
+            '- Proceso que más consumía: '.($m['proceso'] ?? '—'),
+            '- CPU máxima: '.($m['max_cpu'] ?? '?').'% · carga máx (1m): '.($m['max_load'] ?? '?'),
+            '- Ocurrencias (7 días): '.($m['veces'] ?? 1),
+            ($m['hora_pico'] ?? null) !== null ? '- Hora en que más se concentra: '.$m['hora_pico'].':00 (hora Colombia)' : '',
+            '- Detectado por primera vez: '.optional($issue->first_detected_at)->format('d/m/Y H:i'),
+            '- Reincidencias: '.$issue->reopened_count,
+            '',
+            '## Diagnóstico preliminar del panel',
+            (string) $issue->ai_cause,
+            '',
+            '## Repositorio investigado: '.$repo->full_name.' (rama '.$inv['branch'].')',
+            'Pistas usadas: '.implode(', ', $inv['tables'] ?: ['—']),
+            '',
+        ];
+
+        foreach ($inv['contents'] as $path => $body) {
+            $parts[] = '### Archivo: '.$path;
+            $parts[] = '```';
+            $parts[] = $body;
+            $parts[] = '```';
+            $parts[] = '';
+        }
+
+        $parts[] = implode("\n", [
+            '## Formato OBLIGATORIO del plan (Markdown, EXACTAMENTE en este orden)',
+            '',
+            '## 📌 Resumen para el equipo',
+            'En lenguaje HUMANO y directo (3-5 frases, sin jerga): qué proceso/pantalla está consumiendo CPU, por qué, qué vas a hacer y qué mejora se espera. Que un no-técnico lo entienda.',
+            '',
+            '## 🎯 Diagnóstico',
+            'Causa más probable del pico (2-4 frases). Si la causa raíz es una consulta de base de datos lenta, DILO claramente y recomienda revisar el «Optimizador de consultas» del panel (el pico de CPU de la app suele ser reflejo de una consulta pesada).',
+            '',
+            '## 📍 Origen probable en el código',
+            'Qué endpoint/proceso/tarea lo dispara y en qué archivo(s) del repo. Si no lo ves, dilo y da los comandos (docker stats, docker top, logs) para confirmarlo.',
+            '',
+            '## 🛠️ Solución paso a paso',
+            'Opciones concretas y aplicables: optimizar la consulta/endpoint, mover trabajo pesado a colas, activar caché, activar opcache/JIT, o poner un límite de CPU al contenedor en docker-compose (mostrar el bloque `deploy.resources.limits.cpus` exacto). Prioriza la causa raíz sobre la contención.',
+            '',
+            '## ✅ Verificación',
+            'Comandos para confirmar la mejora (docker stats, top -bn1 dentro del contenedor) y qué revisar en el panel a las 24-48 h.',
+            '',
+            '## ⚠️ Riesgos',
+            'Qué cuidar (un límite de CPU muy bajo puede ralentizar la app; mover a colas cambia el flujo; etc.).',
+            '',
+            '## 🤖 Para aplicar',
+            'Un pico de CPU NO se arregla con un índice, así que en esta sección escribe exactamente «Sin índice aplicable». Si propones un cambio de configuración (docker-compose) o de código, descríbelo con el archivo y el bloque exacto para que se pueda aplicar luego con «Cambios de código».',
         ]);
 
         return implode("\n", $parts);

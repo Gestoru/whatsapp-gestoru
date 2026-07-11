@@ -41,6 +41,7 @@ class PlanController extends Controller
             'ok'                => true,
             'kind'              => $issue->kind,
             'db'                => $this->planner->dbOf($issue),
+            'subject'           => $this->planner->subjectText($issue),
             'ai_configured'     => $this->planner->configured(),
             'ai_mode'           => $this->planner->authMode(),
             'has_api_key'       => $this->planner->hasApiKey(),
@@ -137,7 +138,7 @@ class PlanController extends Controller
     public function stream(Server $server, PerfIssue $issue): StreamedResponse
     {
         abort_unless($issue->server_id === $server->id, 404);
-        abort_unless($issue->kind === 'mysql_query', 422, 'La planeación con IA aplica a consultas MySQL.');
+        abort_unless(in_array($issue->kind, ['mysql_query', 'cpu_peak'], true), 422, 'La planeación con IA aplica a consultas MySQL y picos de CPU.');
 
         return response()->stream(function () use ($issue) {
             $emit = $this->sseEmitter();

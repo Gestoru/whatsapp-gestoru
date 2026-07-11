@@ -282,8 +282,8 @@
 
                     {{-- Mapeo del repositorio, con buscador --}}
                     <div id="pm-setup-repo" hidden style="margin-top:12px">
-                        <div class="tiny" style="font-weight:600">🔗 ¿A qué proyecto pertenece esta consulta?</div>
-                        <label>La base de datos <b id="pm-db" style="color:#c084fc">—</b> se mapeará a este repositorio de GitHub (se recuerda para las próximas consultas de la misma base):</label>
+                        <div class="tiny" style="font-weight:600">🔗 ¿A qué proyecto pertenece esta incidencia?</div>
+                        <label>Se mapeará <b id="pm-db" style="color:#c084fc">—</b> a este repositorio de GitHub (se recuerda para las próximas incidencias del mismo origen):</label>
                         <div class="pm-combo">
                             <input type="text" id="pm-repo-search" placeholder="🔎 Busca tu proyecto por nombre…" autocomplete="off">
                             <div class="pm-combo-list" id="pm-repo-list"></div>
@@ -331,10 +331,10 @@
                 <div id="pm-actions" hidden>
                     <div class="pm-actions-title">¿Qué quieres hacer con el plan?</div>
 
-                    {{-- 1) Índice (base de datos) --}}
+                    {{-- 1) Índice (BD) / Guardar plan (CPU) --}}
                     <div class="pm-act">
-                        <div class="pm-act-h"><b>1 · 🗄️ Aplicar el índice</b><span class="pm-act-tag">base de datos</span></div>
-                        <p class="pm-act-p">Sube a GitHub la <b>migración</b> + el script del índice (el cambio principal y seguro). Al desplegar esa app, se aplica solo.</p>
+                        <div class="pm-act-h"><b id="pm-idx-title">1 · 🗄️ Aplicar el índice</b><span class="pm-act-tag" id="pm-idx-tag">base de datos</span></div>
+                        <p class="pm-act-p" id="pm-idx-desc">Sube a GitHub la <b>migración</b> + el script del índice (el cambio principal y seguro). Al desplegar esa app, se aplica solo.</p>
                         <div id="pm-idx-done" class="pm-act-done" hidden></div>
                         <button class="btn btn-sm" id="pm-publish" style="border-color:#22e39b66;color:#22e39b">🚀 Subir índice a GitHub</button>
                     </div>
@@ -422,8 +422,8 @@ async function moveIssue(id, status){
 function actionsFor(status, kind, issueId){
     const b = (s,l) => '<button data-move="'+s+'">'+l+'</button>';
     const detail = '<button class="kact-detail" data-detail="'+issueId+'">ℹ️ Detalle</button>';
-    // «Planear» solo aplica a consultas MySQL (conecta con GitHub + IA)
-    const plan = (kind === 'mysql_query' && ['por_revisar','planeando'].includes(status))
+    // «Planear» aplica a consultas MySQL y a picos de CPU (conecta con GitHub + IA)
+    const plan = (['mysql_query','cpu_peak'].includes(kind) && ['por_revisar','planeando'].includes(status))
         ? '<button class="kact-plan" data-plan="'+issueId+'">🧠 Planear</button>' : '';
     let moves = '';
     switch(status){
@@ -566,18 +566,28 @@ function showActions(on){ show('pm-actions', on); }
 // showError = banner de error + volver a ofrecer «Generar»
 function showError(msg){ setStage('error', msg); showActions(false); showReady(true); $id('pm-generate').innerHTML = '🔁 Reintentar'; }
 
-// Estado del botón/nota del índice (paso 1) según si ya se subió.
+// Adapta la tarjeta 1 según el tipo (índice para MySQL, guardar plan para CPU).
+function isCpu(){ return PM.state && PM.state.kind === 'cpu_peak'; }
+function renderIdxUI(){
+    const cpu = isCpu();
+    $id('pm-idx-title').innerHTML = cpu ? '1 · 📄 Guardar el plan' : '1 · 🗄️ Aplicar el índice';
+    $id('pm-idx-tag').textContent = cpu ? 'documento' : 'base de datos';
+    $id('pm-idx-desc').innerHTML = cpu
+        ? 'Sube el <b>plan de solución</b> a GitHub (documento). Los cambios reales (config o código) se hacen en el paso 2.'
+        : 'Sube a GitHub la <b>migración</b> + el script del índice (el cambio principal y seguro). Al desplegar esa app, se aplica solo.';
+}
+// Estado del botón/nota del paso 1 según si ya se subió.
 function renderIdxDone(plan){
-    const done = $id('pm-idx-done'); const btn = $id('pm-publish');
+    const done = $id('pm-idx-done'); const btn = $id('pm-publish'); const cpu = isCpu();
     btn.disabled = false;
     if(plan && plan.github_pr_url){
         done.hidden = false;
-        done.innerHTML = '✅ Índice subido' + (plan.pushed_at ? ' el ' + plan.pushed_at : '')
+        done.innerHTML = (cpu ? '✅ Plan guardado' : '✅ Índice subido') + (plan.pushed_at ? ' el ' + plan.pushed_at : '')
             + ' · <a href="' + plan.github_pr_url + '" target="_blank" rel="noopener" style="color:#a5b4fc">ver commit</a>';
-        btn.innerHTML = '🔄 Volver a subir';
+        btn.innerHTML = cpu ? '🔄 Volver a guardar' : '🔄 Volver a subir';
     } else {
         done.hidden = true; done.innerHTML = '';
-        btn.innerHTML = '🚀 Subir índice a GitHub';
+        btn.innerHTML = cpu ? '📄 Guardar plan en GitHub' : '🚀 Subir índice a GitHub';
     }
 }
 
@@ -623,7 +633,7 @@ function renderConn(s){
 
 function renderState(){
     const s = PM.state;
-    $id('pm-db').textContent = s.db || '—';
+    $id('pm-db').textContent = s.subject || s.db || 'esto';
     PM.aiMode = s.ai_mode || 'api_key';
 
     const aiOk = s.ai_configured, repoOk = !!s.repo;
@@ -658,7 +668,7 @@ function renderState(){
         renderPlan(p.plan);
         renderChat(p.chat || []);
         resetCodeSection(p);
-        renderIdxDone(p);
+        renderIdxUI(); renderIdxDone(p);
         setStage('ok', '<b>Plan listo.</b> Léelo abajo en «📋 Plan de optimización» y, cuando quieras, elige una acción.');
         showActions(true);
         return;
@@ -827,7 +837,7 @@ function startGeneration(e){
         setStage('ok', '<b>Plan listo.</b> Léelo abajo en «📋 Plan de optimización» y, cuando quieras, elige una acción.');
         renderChat(PM.state.plan && PM.state.plan.chat ? PM.state.plan.chat : []);
         resetCodeSection(null);
-        renderIdxDone(null);
+        renderIdxUI(); renderIdxDone(null);
         showActions(true);
         $id('pm-stage').scrollIntoView({behavior:'smooth', block:'center'});
     });
@@ -923,17 +933,18 @@ $id('pm-publish').addEventListener('click', async () => {
         const d = await r.json();
         if(d.ok){
             done.hidden = false;
-            done.innerHTML = '<span style="color:#22e39b">✅ Índice subido a «' + (d.branch || 'master') + '» · '
+            const verb = isCpu() ? 'Plan guardado' : 'Índice subido';
+            done.innerHTML = '<span style="color:#22e39b">✅ ' + verb + ' a «' + (d.branch || 'master') + '» · '
                 + '<a href="' + d.commit_url + '" target="_blank" rel="noopener" style="color:#a5b4fc">ver commit</a></span>'
-                + (d.has_migration ? ' — incluye migración + script.' : ' <span class="pm-diff-warn">(sin índice auto-aplicable; revisa el plan)</span>');
-            btn.innerHTML = '🔄 Volver a subir'; btn.disabled = false;
+                + (d.has_migration ? ' — incluye migración + script.' : (isCpu() ? '' : ' <span class="pm-diff-warn">(sin índice auto-aplicable; revisa el plan)</span>'));
+            btn.innerHTML = isCpu() ? '🔄 Volver a guardar' : '🔄 Volver a subir'; btn.disabled = false;
         } else {
             done.hidden = false; done.innerHTML = '<span style="color:#fca5a5">⚠️ ' + (d.error || 'No se pudo subir.') + '</span>';
-            btn.disabled = false; btn.innerHTML = '🚀 Subir índice a GitHub';
+            btn.disabled = false; btn.innerHTML = isCpu() ? '📄 Guardar plan en GitHub' : '🚀 Subir índice a GitHub';
         }
     }catch(e){
         done.hidden = false; done.innerHTML = '<span style="color:#fca5a5">⚠️ No se pudo subir (' + e.message + ').</span>';
-        btn.disabled = false; btn.innerHTML = '🚀 Subir índice a GitHub';
+        btn.disabled = false; btn.innerHTML = isCpu() ? '📄 Guardar plan en GitHub' : '🚀 Subir índice a GitHub';
     }
 });
 
