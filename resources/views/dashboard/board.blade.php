@@ -400,6 +400,7 @@ async function loadBoard(){
         if(!r.ok) throw new Error('HTTP '+r.status);
         boardBody.innerHTML = await r.text();
         wireBoard();
+        maybeAutoPlan();
     }catch(e){
         boardBody.innerHTML = '<div class="alert alert-bad">No se pudo cargar el tablero ('+e.message+'). '
             + '<a href="#" onclick="loadBoard();return false" style="text-decoration:underline">Reintentar</a></div>';
@@ -618,6 +619,24 @@ async function openPlan(issueId){
         PM.state = await r.json();
     }catch(e){ showError('No se pudo cargar el estado del plan (' + e.message + ')'); return; }
     renderState();
+}
+
+// Si venimos del popup del pico con ?planear=<firma>, abre ese plan directo.
+function maybeAutoPlan(){
+    const sig = new URLSearchParams(location.search).get('planear');
+    if(!sig) return;
+    history.replaceState(null, '', location.pathname);   // que no se repita al refrescar
+    const card = boardBody.querySelector('.kcard[data-signature="' + sig.replace(/"/g,'') + '"]');
+    if(card){
+        card.scrollIntoView({behavior:'smooth', block:'center'});
+        openPlan(card.dataset.id);
+    } else {
+        const note = document.createElement('div');
+        note.style.cssText = 'margin-top:10px;background:#c084fc12;border:1px solid #c084fc44;color:#e9d5ff;border-radius:10px;padding:10px 14px;font-size:13px';
+        note.textContent = 'No encontré una tarjeta activa para ese pico (puede que ya no esté apareciendo). Míralo en las columnas del tablero.';
+        boardBody.prepend(note);
+        setTimeout(() => note.remove(), 9000);
+    }
 }
 
 // Pinta el resumen de conexión (IA + repo) en una línea, con opción de cambiar.

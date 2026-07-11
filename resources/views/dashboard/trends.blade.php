@@ -608,10 +608,17 @@ function openDetail(s){
         + (s.cont ? '- Contenedor Docker responsable: ' + s.cont + (s.contPct ? ' (' + s.contPct + '% de un núcleo)' : '') + '\n' : '')
         + '\n## Qué necesito\n1. Causa más probable.\n2. Comandos exactos para confirmarla.\n3. Cómo evitar que se repita.\nSi el contenedor es de base de datos, dime qué consultas revisar.';
 
+    // Firma del pico (misma lógica que el tablero: slug del contenedor o del
+    // primer término del proceso) para que «Planear» abra esa tarjeta directo.
+    const culprit = (s.cont && s.cont.trim()) ? s.cont.trim()
+        : ((s.proc || '').trim().split(/\s+/)[0].split('/').pop() || 'sistema');
+    const planSig = (culprit.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'x').slice(0, 80);
+    const boardUrl = '{{ route('dashboard.servers.board', $server) }}?planear=' + encodeURIComponent(planSig);
+
     html += '<div class="row" style="justify-content:flex-end;margin-top:16px;gap:6px;flex-wrap:wrap">'
-        + '<a href="{{ route('dashboard.servers.board', $server) }}" class="btn btn-sm" style="border-color:#c084fc66;color:#c084fc">🧠 Planear la solución con IA</a>'
+        + '<a href="' + boardUrl + '" class="btn btn-sm" style="border-color:#c084fc66;color:#c084fc">🧠 Planear la solución con IA</a>'
         + '<button type="button" class="btn btn-primary btn-sm" data-copy="point-ai">🤖 Copiar informe para IA</button></div>'
-        + '<div class="tiny muted" style="text-align:right;margin-top:6px">«Planear» abre el tablero: busca la tarjeta del pico y dale 🧠 Planear para que la IA investigue el repo y proponga la solución.</div>'
+        + '<div class="tiny muted" style="text-align:right;margin-top:6px">«Planear» abre el tablero y arranca el plan de este pico con la IA.</div>'
         + '<textarea id="point-ai" readonly style="display:none">' + escP(prompt) + '</textarea>';
 
     modalBody.innerHTML = html;

@@ -45,7 +45,7 @@
                             @php([$sc,$se,$sn] = $sevMeta[$issue->severity] ?? $sevMeta['media'])
                             @php($m = $issue->metrics ?? [])
                             @php($isMysql = $issue->kind === 'mysql_query')
-                            <div class="kcard" data-id="{{ $issue->id }}" data-status="{{ $issue->status }}" data-kind="{{ $issue->kind }}" style="--sev:{{ $sc }}">
+                            <div class="kcard" data-id="{{ $issue->id }}" data-status="{{ $issue->status }}" data-kind="{{ $issue->kind }}" data-signature="{{ $issue->signature }}" style="--sev:{{ $sc }}">
                                 {{-- Titular compacto --}}
                                 <div class="kc-head">
                                     <span class="kc-ic">{{ $isMysql ? '🗄️' : '🔥' }}</span>
