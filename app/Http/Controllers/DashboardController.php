@@ -117,7 +117,82 @@ class DashboardController extends Controller
         // Agrupar los dominios por su raíz para una vista organizada
         $data['domainGroups'] = $this->groupDomains($data['domains']);
 
+        // Lectura «en palabras sencillas» de qué está consumiendo el CPU.
+        $data['cpuRead'] = $this->cpuReadableDiagnosis($data['processes'], $server);
+
         return view('dashboard.show', array_merge(['server' => $server], $data));
+    }
+
+    /**
+     * Interpreta los procesos top de CPU y devuelve un mensaje claro de qué
+     * está pesando y qué optimizar (para no dejar al usuario leyendo procesos).
+     *
+     * @return array{emoji:string, title:string, text:string, cta:?string, url:?string, extra:?string}|null
+     */
+    private function cpuReadableDiagnosis(array $processes, Server $server): ?array
+    {
+        $procs = $processes['cpu'] ?? [];
+        if (empty($procs)) {
+            return null;
+        }
+
+        $fl = ['db' => 0, 'app' => 0, 'queue' => 0, 'monitor' => 0, 'docker' => 0, 'compile' => 0];
+        foreach (array_slice($procs, 0, 6) as $p) {
+            $cpu = (float) ($p['cpu'] ?? 0);
+            $cmd = strtolower($p['command'] ?? '');
+            if ($cpu < 40) {
+                continue;
+            }
+            if (preg_match('/mysqld|mariadb|percona|postgres/', $cmd))                     $fl['db']      = max($fl['db'], $cpu);
+            elseif (preg_match('/frankenphp|php-fpm|php_fpm|artisan|node|(^|\/)php/', $cmd)) $fl['app']     = max($fl['app'], $cpu);
+            elseif (preg_match('/queue|worker|horizon|supervisor/', $cmd))                  $fl['queue']   = max($fl['queue'], $cpu);
+            elseif (preg_match('/netdata/', $cmd))                                          $fl['monitor'] = max($fl['monitor'], $cpu);
+            elseif (preg_match('/dockerd|containerd|caddy/', $cmd))                         $fl['docker']  = max($fl['docker'], $cpu);
+            elseif (preg_match('/cc1|gcc|clang|\bmake\b|cmake|configure/', $cmd))           $fl['compile'] = max($fl['compile'], $cpu);
+        }
+
+        $qUrl = route('dashboard.servers.queries', $server);
+        $bUrl = route('dashboard.servers.board', $server);
+
+        if ($fl['db'] && $fl['app']) {
+            $r = ['🚨', 'La aplicación y la base de datos están saturadas a la vez',
+                'Casi siempre esto significa una <b>consulta lenta</b> que arrastra a las dos: el PHP se queda esperando a MySQL y ambos disparan el CPU. Optimiza esas consultas y bajan las dos juntas.',
+                '🧠 Optimizar consultas', $qUrl];
+        } elseif ($fl['db']) {
+            $r = ['🗄️', 'La base de datos está pesada',
+                'MySQL está consumiendo CPU resolviendo consultas. Revisa cuáles pesan más y qué índices faltan.',
+                '🧠 Ver el optimizador de consultas', $qUrl];
+        } elseif ($fl['app']) {
+            $r = ['🌐', 'La aplicación web (PHP) está pesada',
+                'Una pantalla o reporte costoso, o muchos usuarios a la vez. Si viene de datos, casi seguro es una consulta lenta — revísalo en el optimizador.',
+                '🧠 Ver el optimizador de consultas', $qUrl];
+        } elseif ($fl['queue']) {
+            $r = ['⚙️', 'Trabajos en segundo plano (colas)',
+                'Un worker/cola está procesando algo pesado (correos, reportes, importaciones). Suele ser puntual; si es constante, conviene repartir o limitar esos trabajos.',
+                '🗂️ Ver el tablero', $bUrl];
+        } elseif ($fl['compile']) {
+            $r = ['🔨', 'Se está compilando/instalando software',
+                'Es normal durante una instalación o actualización y suele durar poco. Si no estabas instalando nada, revisa qué dependencia se está construyendo.',
+                null, null];
+        } elseif ($fl['monitor']) {
+            $r = ['📈', 'El monitoreo (netdata) es lo que más consume',
+                'El propio sistema de monitoreo está usando bastante CPU. No afecta a tus sitios, pero si el servidor va justo puedes bajarle la frecuencia de muestreo.',
+                null, null];
+        } elseif ($fl['docker']) {
+            $r = ['🐳', 'El motor de Docker está activo',
+                'dockerd/containerd suben porque <b>algún contenedor</b> está trabajando (ellos son solo el motor). Mira qué contenedor y, si es la base de datos, revisa las consultas.',
+                '🧠 Ver el optimizador de consultas', $qUrl];
+        } else {
+            $r = ['🟢', 'Consumo dentro de lo normal',
+                'Ningún proceso está acaparando el CPU en este momento; el servidor se ve tranquilo.',
+                null, null];
+        }
+
+        $extra = ($fl['monitor'] && ($fl['db'] || $fl['app']))
+            ? 'Además, netdata (el monitor) está usando ~'.round($fl['monitor']).'% — normal durante un pico, pero si el servidor va justo puedes bajarle la frecuencia.'
+            : null;
+
+        return ['emoji' => $r[0], 'title' => $r[1], 'text' => $r[2], 'cta' => $r[3], 'url' => $r[4], 'extra' => $extra];
     }
 
     /**

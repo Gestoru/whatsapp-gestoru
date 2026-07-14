@@ -218,6 +218,22 @@
 
         {{-- ── Procesos que más consumen ── --}}
         <h2><span class="section-ic">🔥</span> Procesos que más consumen</h2>
+
+        {{-- Lectura automática «en palabras sencillas»: qué está pesando y qué optimizar --}}
+        @if(!empty($cpuRead))
+            <div class="list-card" style="margin-bottom:14px;border-left:3px solid #7dd3fc;padding:13px 16px">
+                <div style="display:flex;gap:11px;align-items:flex-start">
+                    <span style="font-size:20px;flex:none">{{ $cpuRead['emoji'] }}</span>
+                    <div style="flex:1;min-width:0">
+                        <div style="font-weight:700;font-size:13.5px;margin-bottom:3px">🧭 En palabras sencillas: {{ $cpuRead['title'] }}</div>
+                        <div class="tiny" style="color:var(--muted);line-height:1.6">{!! $cpuRead['text'] !!}</div>
+                        @if($cpuRead['extra'])<div class="tiny" style="color:var(--muted2);line-height:1.6;margin-top:5px">⚠️ {{ $cpuRead['extra'] }}</div>@endif
+                        @if($cpuRead['cta'])<a href="{{ $cpuRead['url'] }}" class="btn btn-sm" style="margin-top:10px;border-color:#c084fc66;color:#c084fc">{{ $cpuRead['cta'] }}</a>@endif
+                    </div>
+                </div>
+            </div>
+        @endif
+
         <div class="grid" style="grid-template-columns:1fr 1fr;gap:16px">
             @foreach([['cpu','Por CPU'],['mem','Por memoria']] as [$key,$label])
                 <div class="list-card">
