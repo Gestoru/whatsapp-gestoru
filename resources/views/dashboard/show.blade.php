@@ -190,7 +190,9 @@
                         <div class="dom-group-head" style="display:flex;align-items:center;gap:8px;padding:11px 14px;cursor:pointer;background:var(--card2);border-bottom:1px solid var(--line)">
                             <span class="dg-chev" style="display:inline-block;width:12px;color:var(--muted);transition:transform .2s">▸</span>
                             <span style="font-weight:700">🌐 {{ $apex }}</span>
-                            <span class="pill tiny" style="margin-left:auto">{{ count($subs) }}</span>
+                            <button type="button" class="dom-restart" data-apex="{{ $apex }}" title="Reiniciar el servicio (contenedores Docker) de {{ $apex }}"
+                                style="margin-left:auto;background:none;border:1px solid var(--line);color:var(--muted);border-radius:7px;cursor:pointer;font-size:11px;padding:3px 8px">🔄 Reiniciar</button>
+                            <span class="pill tiny">{{ count($subs) }}</span>
                         </div>
                         <div class="dom-group-body hidden" style="padding:10px 12px">
                             @foreach($subs as $d)
@@ -338,6 +340,32 @@ domFilter?.addEventListener('input', () => {
 });
 
 const CSRF = document.querySelector('meta[name=csrf-token]').content;
+
+// ── Reiniciar el servicio (contenedores Docker) de un dominio ──
+const RESTART_URL = @json(route('dashboard.servers.service.restart', $server));
+document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.dom-restart');
+    if(!btn) return;
+    e.preventDefault(); e.stopPropagation();
+    const apex = btn.dataset.apex;
+    if(!confirm('¿Reiniciar el servicio de ' + apex + '?\n\nSe reiniciarán sus contenedores Docker. El sitio quedará indisponible unos segundos mientras arranca de nuevo.')) return;
+    const old = btn.innerHTML; btn.disabled = true; btn.innerHTML = '⏳ Reiniciando…';
+    try{
+        const r = await fetch(RESTART_URL, {method:'POST',
+            headers:{'X-CSRF-TOKEN':CSRF,'Content-Type':'application/json',Accept:'application/json'},
+            body: JSON.stringify({project: apex})});
+        const d = await r.json();
+        if(d.ok){
+            btn.innerHTML = '✅ Reiniciado';
+            alert('✅ Reiniciado: ' + d.restarted.join(', ') + '\n\nDale unos 10-20 segundos y recarga el sitio.');
+        } else {
+            btn.innerHTML = '⚠️ Falló';
+            alert('No se pudo reiniciar:\n' + (d.error || 'error desconocido'));
+        }
+    }catch(err){ btn.innerHTML = '⚠️ Error'; alert('Error de red: ' + err.message); }
+    setTimeout(() => { btn.disabled = false; btn.innerHTML = old; }, 4000);
+});
+
 const barColor = p => p >= 90 ? 'var(--bad)' : p >= 70 ? 'var(--warn)' : 'var(--ok)';
 const j = (el,html)=>el.innerHTML=html;
 

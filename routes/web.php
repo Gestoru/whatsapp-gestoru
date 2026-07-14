@@ -66,6 +66,10 @@ Route::middleware('dashboard.auth')->prefix('panel')->name('dashboard.')->group(
     // Herramientas de mantenimiento (acciones explícitas)
     Route::post('/herramientas/slowlog', [DashboardController::class, 'enableSlowLogAll'])->name('tools.slowlog');
 
+    // Reiniciar el servicio (contenedores Docker) de un proyecto/dominio
+    Route::get('/servidores/{server}/servicios', [DashboardController::class, 'services'])->name('servers.services');
+    Route::post('/servidores/{server}/servicios/reiniciar', [DashboardController::class, 'restartService'])->name('servers.service.restart');
+
     // Integración con Contabo (estado y plan de los VPS)
     Route::post('/contabo/conectar', [ProviderController::class, 'connectContabo'])->name('contabo.connect');
     Route::post('/contabo/sincronizar', [ProviderController::class, 'syncContabo'])->name('contabo.sync');

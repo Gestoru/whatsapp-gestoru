@@ -415,6 +415,77 @@ class DashboardController extends Controller
         return view('dashboard.board', compact('server'));
     }
 
+    /** Lista los contenedores Docker vivos del servidor (para reiniciarlos). */
+    public function services(Server $server, \App\Services\SshClient $ssh)
+    {
+        if (! $server->hasCredentials()) {
+            return response()->json(['ok' => false, 'error' => 'Servidor sin credenciales.'], 422);
+        }
+        try {
+            $raw = $ssh->run($server, "docker ps --format '{{.Names}}|{{.Status}}|{{.Image}}'", 25);
+            $rows = [];
+            foreach (array_filter(array_map('trim', explode("\n", $raw))) as $line) {
+                [$name, $status, $image] = array_pad(explode('|', $line), 3, '');
+                $rows[] = ['name' => $name, 'status' => $status, 'image' => $image];
+            }
+
+            return response()->json(['ok' => true, 'containers' => $rows]);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json(['ok' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Reinicia los contenedores Docker de un proyecto/dominio (o uno exacto).
+     * Valida contra la lista real de contenedores para no ejecutar nada raro.
+     */
+    public function restartService(Request $request, Server $server, \App\Services\SshClient $ssh)
+    {
+        if (! $server->hasCredentials()) {
+            return response()->json(['ok' => false, 'error' => 'Servidor sin credenciales.'], 422);
+        }
+
+        $container = trim((string) $request->input('container', ''));
+        $project   = trim((string) $request->input('project', ''));
+        // Del proyecto/dominio tomamos la primera etiqueta: gestordepartes.net → gestordepartes
+        $slug = preg_replace('/[^a-z0-9]+/', '', strtolower(explode('.', $project)[0] ?? ''));
+
+        try {
+            $raw   = $ssh->run($server, "docker ps --format '{{.Names}}'", 25);
+            $names = array_values(array_filter(array_map('trim', explode("\n", $raw))));
+
+            if ($container !== '') {
+                // Reinicio de UN contenedor exacto (debe existir en la lista real).
+                $match = in_array($container, $names, true) ? [$container] : [];
+            } else {
+                // Reinicio de todos los contenedores del proyecto (por coincidencia de nombre).
+                $match = strlen($slug) >= 2
+                    ? array_values(array_filter($names, fn ($n) => str_contains(preg_replace('/[^a-z0-9]+/', '', strtolower($n)), $slug)))
+                    : [];
+            }
+
+            if (empty($match)) {
+                return response()->json([
+                    'ok' => false,
+                    'error' => 'No encontré contenedores para reiniciar. Activos: '.($names ? implode(', ', $names) : 'ninguno'),
+                    'containers' => $names,
+                ], 404);
+            }
+
+            $args = implode(' ', array_map('escapeshellarg', $match));
+            $out  = $ssh->run($server, "docker restart {$args}", 90);
+            \Illuminate\Support\Facades\Log::warning('Reinicio de servicio', ['server' => $server->id, 'containers' => $match]);
+
+            return response()->json(['ok' => true, 'restarted' => $match, 'out' => trim($out)]);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json(['ok' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
     /** Contenido del tablero (se carga por AJAX: hace SSH y sincroniza). */
     public function boardPanel(Server $server, \App\Services\PerfBoard $board)
     {
