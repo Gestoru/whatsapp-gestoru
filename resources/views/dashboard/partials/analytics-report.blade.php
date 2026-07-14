@@ -51,21 +51,33 @@
             @if(empty($report['mysql_top']))
                 <div class="empty" style="padding:20px"><span class="muted tiny">performance_schema no tiene datos aún (o está desactivado). Esta tabla se llena sola con el uso.</span></div>
             @else
-                <table>
-                    <thead><tr><th>Base de datos</th><th style="text-align:right">Tiempo total</th><th style="text-align:right">Veces</th><th style="text-align:right">Promedio</th><th style="text-align:right">Última vez <span class="muted" style="font-weight:400">🇨🇴</span></th><th>Consulta</th></tr></thead>
-                    <tbody>
-                    @foreach($report['mysql_top'] as $q)
-                        <tr>
-                            <td class="muted tiny">{{ $q['db'] }}</td>
-                            <td style="text-align:right;font-weight:700;color:{{ (float)$q['total_s'] >= 60 ? 'var(--bad)' : ((float)$q['total_s'] >= 10 ? 'var(--warn)' : 'var(--text)') }}">{{ $q['total_s'] }}s</td>
-                            <td style="text-align:right" class="muted">{{ number_format((int)$q['execs']) }}</td>
-                            <td style="text-align:right" class="muted tiny">{{ $q['avg_ms'] }}ms</td>
-                            <td class="muted tiny" style="text-align:right;white-space:nowrap">{{ $q['last_seen'] ?? '—' }}</td>
-                            <td class="tiny" style="font-family:ui-monospace,monospace;word-break:break-all">{{ $q['query'] }}</td>
-                        </tr>
+                @php($maxTot = max(array_map(fn ($x) => (float) ($x['total_s'] ?? 0), $report['mysql_top'])) ?: 1)
+                <div class="qtop">
+                    @foreach($report['mysql_top'] as $i => $q)
+                        @php($tot = (float) $q['total_s'])
+                        @php($pct = max(3, round($tot / $maxTot * 100)))
+                        @php($totColor = $tot >= 60 ? 'var(--bad)' : ($tot >= 10 ? 'var(--warn)' : '#22e39b'))
+                        @php($avg = (float) $q['avg_ms'])
+                        @php($avgColor = $avg >= 1000 ? 'var(--bad)' : ($avg >= 300 ? 'var(--warn)' : 'var(--muted)'))
+                        <div class="qtop-row">
+                            <div class="qtop-n">{{ $i + 1 }}</div>
+                            <div class="qtop-body">
+                                <div class="qtop-meta">
+                                    <span class="qtop-total" style="color:{{ $totColor }}">{{ $q['total_s'] }}s <span class="qtop-lbl">acumulado</span></span>
+                                    <span class="qtop-db">🗄️ {{ $q['db'] }}</span>
+                                    <span class="qtop-sep">·</span>
+                                    <span>{{ number_format((int) $q['execs']) }} ejec</span>
+                                    <span class="qtop-sep">·</span>
+                                    <span style="color:{{ $avgColor }}">{{ $avg >= 1000 ? round($avg / 1000, 1).'s' : $q['avg_ms'].'ms' }} prom</span>
+                                    <span class="qtop-when">🕓 {{ $q['last_seen'] ?? '—' }}</span>
+                                </div>
+                                <div class="qtop-bar"><span style="width:{{ $pct }}%;background:{{ $totColor }}"></span></div>
+                                <code class="qtop-sql" title="Clic para ver la consulta completa">{{ $q['query'] }}</code>
+                            </div>
+                        </div>
                     @endforeach
-                    </tbody>
-                </table>
+                </div>
+                <p class="muted tiny" style="margin:10px 2px 0">💡 La barra muestra cuánto pesa cada consulta frente a la más pesada. Clic en una consulta para verla completa · <a href="{{ route('dashboard.servers.queries', $server) }}" style="color:var(--accent)">abrir el diagnóstico con la estructura de tablas</a>.</p>
             @endif
         </div>
 

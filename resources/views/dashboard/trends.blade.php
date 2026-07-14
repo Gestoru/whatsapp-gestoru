@@ -85,6 +85,29 @@
     /* Tooltip interactivo de las gráficas: el dato sale con solo pasar el mouse */
     .trend-chart{cursor:crosshair;touch-action:none}
     .trend-chart circle[fill="transparent"]{pointer-events:none}
+
+    /* 🏆 Consultas que más consumen: lista escaneable y legible */
+    .qtop{display:flex;flex-direction:column}
+    .qtop-row{display:flex;gap:12px;padding:12px 4px;border-bottom:1px solid var(--line)}
+    .qtop-row:last-child{border-bottom:none}
+    .qtop-row:hover{background:#ffffff06;border-radius:8px}
+    .qtop-n{font-size:13px;font-weight:800;color:var(--muted2);min-width:22px;text-align:center;
+        padding-top:1px;font-variant-numeric:tabular-nums}
+    .qtop-body{flex:1;min-width:0}
+    .qtop-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+    .qtop-total{font-weight:800;font-size:14.5px;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+    .qtop-lbl{font-weight:400;font-size:10px;color:var(--muted2)}
+    .qtop-db{font-weight:600;color:var(--text)}
+    .qtop-sep{color:var(--muted2)}
+    .qtop-when{margin-left:auto;font-size:11px;color:var(--muted2);white-space:nowrap}
+    .qtop-bar{height:4px;background:#0e1836;border-radius:3px;overflow:hidden;margin:8px 0}
+    .qtop-bar span{display:block;height:100%;border-radius:3px;min-width:3px}
+    .qtop-sql{display:block;font-family:ui-monospace,monospace;font-size:11.5px;line-height:1.55;color:#c7d2fe;
+        background:#0a1024;border:1px solid var(--line);border-radius:8px;padding:8px 11px;cursor:pointer;
+        white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .qtop-sql::after{content:' ⤢';opacity:.45;font-size:10px}
+    .qtop-sql.open{white-space:pre-wrap;word-break:break-word}
+    .qtop-sql.open::after{content:''}
 </style>
 @endpush
 
@@ -431,6 +454,12 @@ function handleCritical(m, d){
     }
     critActive = crit;
 }
+
+// ── Expandir/colapsar la consulta en la lista «que más consumen» ──
+document.addEventListener('click', (e) => {
+    const sql = e.target.closest('.qtop-sql');
+    if(sql) sql.classList.toggle('open');
+});
 
 // ── Copiar informes para IA (funciona también sin https) ──
 document.addEventListener('click', async (e) => {
