@@ -513,6 +513,51 @@ class DashboardController extends Controller
     }
 
     /**
+     * Reinicia el motor MySQL/MariaDB del servidor. Busca el contenedor de
+     * base de datos (por imagen/nombre) y lo reinicia; si no hay contenedor,
+     * intenta el servicio del sistema. Es un martillo grande: corta a todos
+     * los sitios que usan esa base unos segundos.
+     */
+    public function restartMysql(Server $server, \App\Services\SshClient $ssh)
+    {
+        if (! $server->hasCredentials()) {
+            return response()->json(['ok' => false, 'error' => 'Servidor sin credenciales.'], 422);
+        }
+        try {
+            $raw = $ssh->run($server, "docker ps --format '{{.Names}}|{{.Image}}'", 25);
+            $db  = [];
+            foreach (array_filter(array_map('trim', explode("\n", $raw))) as $line) {
+                [$name, $image] = array_pad(explode('|', $line), 2, '');
+                if (preg_match('/mysql|mariadb|percona/i', $name.' '.$image)) {
+                    $db[] = $name;
+                }
+            }
+
+            if (! empty($db)) {
+                $args = implode(' ', array_map('escapeshellarg', $db));
+                $out  = $ssh->run($server, "docker restart {$args}", 120);
+                \Illuminate\Support\Facades\Log::warning('Reinicio de MySQL (Docker)', ['server' => $server->id, 'containers' => $db]);
+
+                return response()->json(['ok' => true, 'restarted' => $db, 'via' => 'docker', 'out' => trim($out)]);
+            }
+
+            // Sin contenedor: intentar el servicio del sistema (mysql / mariadb).
+            $out = $ssh->run($server, 'systemctl restart mysql 2>/dev/null || systemctl restart mariadb 2>/dev/null && echo OK', 60);
+            if (str_contains($out, 'OK')) {
+                \Illuminate\Support\Facades\Log::warning('Reinicio de MySQL (systemd)', ['server' => $server->id]);
+
+                return response()->json(['ok' => true, 'restarted' => ['servicio del sistema'], 'via' => 'systemd']);
+            }
+
+            return response()->json(['ok' => false, 'error' => 'No encontré un contenedor de MySQL/MariaDB ni un servicio del sistema para reiniciar.'], 404);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json(['ok' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * Reinicia los contenedores Docker de un proyecto/dominio (o uno exacto).
      * Valida contra la lista real de contenedores para no ejecutar nada raro.
      */

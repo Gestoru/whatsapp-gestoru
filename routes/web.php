@@ -69,6 +69,7 @@ Route::middleware('dashboard.auth')->prefix('panel')->name('dashboard.')->group(
     // Reiniciar el servicio (contenedores Docker) de un proyecto/dominio
     Route::get('/servidores/{server}/servicios', [DashboardController::class, 'services'])->name('servers.services');
     Route::post('/servidores/{server}/servicios/reiniciar', [DashboardController::class, 'restartService'])->name('servers.service.restart');
+    Route::post('/servidores/{server}/mysql/reiniciar', [DashboardController::class, 'restartMysql'])->name('servers.mysql.restart');
 
     // Integración con Contabo (estado y plan de los VPS)
     Route::post('/contabo/conectar', [ProviderController::class, 'connectContabo'])->name('contabo.connect');

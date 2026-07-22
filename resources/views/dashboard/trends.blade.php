@@ -6,6 +6,8 @@
     <a href="{{ route('dashboard.servers.show', $server) }}" class="btn btn-ghost btn-sm">← {{ $server->name }}</a>
     <a href="#analisis" class="btn btn-sm">🔬 Ir al análisis</a>
     <a href="{{ route('dashboard.servers.queries', $server) }}" class="btn btn-sm">🧠 Optimizador SQL</a>
+    <button type="button" id="restart-mysql" class="btn btn-sm" style="border-color:#ff4d6d55;color:#fca5a5"
+        title="Reinicia el motor MySQL/MariaDB del servidor">🔄 Reiniciar MySQL</button>
 @endsection
 
 @php
@@ -459,6 +461,22 @@ function handleCritical(m, d){
 document.addEventListener('click', (e) => {
     const sql = e.target.closest('.qtop-sql');
     if(sql) sql.classList.toggle('open');
+});
+
+// ── Reiniciar MySQL (martillo grande: corta a todos los sitios unos segundos) ──
+document.getElementById('restart-mysql')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    if(!confirm('⚠️ ¿Reiniciar MySQL en este servidor?\n\nSe cerrarán TODAS las conexiones y los sitios que usan esta base quedarán sin servicio unos segundos mientras arranca. Úsalo solo si la base está atascada. ¿Continuar?')) return;
+    const CSRF = document.querySelector('meta[name=csrf-token]')?.content || '';
+    const old = btn.innerHTML; btn.disabled = true; btn.innerHTML = '⏳ Reiniciando MySQL…';
+    try{
+        const r = await fetch(@json(route('dashboard.servers.mysql.restart', $server)), {
+            method:'POST', headers:{'X-CSRF-TOKEN':CSRF, Accept:'application/json'}});
+        const d = await r.json();
+        if(d.ok){ btn.innerHTML = '✅ MySQL reiniciado'; alert('✅ Reiniciado: ' + d.restarted.join(', ') + '\n\nDale 10-20 segundos y recarga los sitios.'); }
+        else { btn.innerHTML = '⚠️ Falló'; alert('No se pudo reiniciar:\n' + (d.error || 'error desconocido')); }
+    }catch(err){ btn.innerHTML = '⚠️ Error'; alert('Error de red: ' + err.message); }
+    setTimeout(() => { btn.disabled = false; btn.innerHTML = old; }, 5000);
 });
 
 // ── Copiar informes para IA (funciona también sin https) ──
